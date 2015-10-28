@@ -362,7 +362,7 @@ KDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
 QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, bool setUidProperty = false)
 {
     QString eventId = gCalEventId(event);
-    QJsonObject start, end;
+    QJsonObject start, end, reminders;
 
     // insert the date/time and timeZone information into the Json object.
     // note that timeZone is required for recurring events, for some reason.
@@ -382,7 +382,12 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
 
     QJsonObject retn;
     if (!eventId.isEmpty()) retn.insert(QLatin1String("id"), eventId);
-    if (event->recurrence()) retn.insert(QLatin1String("recurrence"), recurrenceArray(event, icalFormat));
+    if (event->recurrence()) {
+        QJsonArray recArray = recurrenceArray(event, icalFormat);
+        if (recArray.size()) {
+            retn.insert(QLatin1String("recurrence"), recArray);
+        }
+    }
     retn.insert(QLatin1String("summary"), event->summary());
     retn.insert(QLatin1String("description"), event->description());
     retn.insert(QLatin1String("location"), event->location());
@@ -391,6 +396,12 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     retn.insert(QLatin1String("sequence"), QString::number(event->revision()+1));
     //retn.insert(QLatin1String("locked"), event->readOnly()); // only allow locking server-side.
     // we may wish to support locking/readonly from local side also, in the future.
+
+    // if the event has no alarms associated with it, don't let Google add one automatically.
+    if (event->alarms().count() == 0) {
+        reminders.insert(QLatin1String("useDefault"), false);
+        retn.insert(QLatin1String("reminders"), reminders);
+    }
 
     if (setUidProperty) {
         // now we store private extended properties: local uid.
@@ -744,7 +755,7 @@ bool localModificationIsReal(const QJsonObject &local, const QJsonObject &remote
     KCalCore::Event::Ptr remoteEvent = KCalCore::Event::Ptr(new KCalCore::Event);
     jsonToKCal(local, localEvent, defaultReminderStartOffset, icalFormat, &changed);
     jsonToKCal(remote, remoteEvent, defaultReminderStartOffset, icalFormat, &changed);
-    if (GoogleCalendarIncidenceComparator::eventsEqual(localEvent, remoteEvent, true)) {
+    if (GoogleCalendarIncidenceComparator::incidencesEqual(localEvent, remoteEvent, true)) {
         return false; // they're equal, so the local modification is not real.
     }
     return true;
@@ -2011,6 +2022,12 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
         updateLocalCalendarNotebookEvents(accountId, updatedCalendarId);
         m_storageNeedsSave = true;
     }
+
+    // this becomes our new sync anchor.  In theory there could be lost updates because this timestamp will be greater
+    // than the point at which we requested local changes; but the alternative is cache the timestamp at the point
+    // just before we request local changes, and in that case, on the next sync we would get local changes (including additions)
+    // reported for every remote change which was applied above...
+    m_newSinceTimestamp[accountId] = QDateTime::currentDateTimeUtc(); // next sync should get all local changes made after this point in time.
 }
 
 void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(int accountId, const QString &calendarId)
@@ -2178,10 +2195,4 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(int accountId,
             m_storageNeedsSave = true;
         }
     }
-
-    // this becomes our new sync anchor.  In theory there could be lost updates because this timestamp will be greater
-    // than the point at which we requested local changes; but the alternative is cache the timestamp at the point
-    // just before we request local changes, and in that case, on the next sync we would get local changes (including additions)
-    // reported for every remote change which was applied above...
-    m_newSinceTimestamp[accountId] = QDateTime::currentDateTimeUtc(); // next sync should get all local changes made after this point in time.
 }
