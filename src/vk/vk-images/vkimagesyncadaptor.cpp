@@ -321,7 +321,7 @@ void VKImageSyncAdaptor::albumsFinishedHandler()
         if (dbAlbum) {
             lastSyncTimestampForAlbum = qMax(dbAlbum->created(), dbAlbum->updated());
         }
-        if (created > lastSyncTimestampForAlbum || updated > lastSyncTimestampForAlbum) {
+        if (created > lastSyncTimestampForAlbum || updated > lastSyncTimestampForAlbum || (created == 0 && updated == 0)) {
             SOCIALD_LOG_DEBUG("Need to request photos for album:" << id << title << "with timestamps:" <<
                               created << "+" << updated << ">" << lastSyncTimestampForAlbum);
             m_requestedPhotosForOwnerAndAlbum.insert(QStringLiteral("%1:%2").arg(ownerId).arg(id));
