@@ -45,7 +45,7 @@
 #include <Accounts/Manager>
 
 #define SOCIALD_VK_CONTACTS_SYNCTARGET QLatin1String("vk")
-#define SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS 50
+#define SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS 200
 
 static const char *IMAGE_DOWNLOADER_TOKEN_KEY = "token";
 static const char *IMAGE_DOWNLOADER_ACCOUNT_ID_KEY = "account_id";
@@ -66,6 +66,8 @@ namespace {
             const QContact &c(existing[i]);
             if (c.detail<QContactGuid>().guid() == guidstr) {
                 // we've found this contact in the local database
+                SOCIALD_LOG_TRACE("Found matching existing VK contact:" << c.detail<QContactName>() << "with guid:" << c.detail<QContactGuid>().guid() <<
+                                  "for synced VK friend:" << contact->detail<QContactName>() << "wih guid:" << contact->detail<QContactGuid>().guid());
                 // determine whether it was modified remotely
                 *hasChanged = false;
                 QContact modified = c;
@@ -101,10 +103,19 @@ namespace {
                     saveNonexportableDetail(modified, modAvatar);
                     *hasChanged = true;
                 }
-                if (c.detail<QContactAddress>().locality() != fromServer.detail<QContactAddress>().locality()) {
+                if (c.detail<QContactAddress>().locality() != fromServer.detail<QContactAddress>().locality()
+                        || c.detail<QContactAddress>().country() != fromServer.detail<QContactAddress>().country()) {
                     QContactAddress modAddr = modified.detail<QContactAddress>();
                     modAddr.setLocality(fromServer.detail<QContactAddress>().locality());
+                    modAddr.setCountry(fromServer.detail<QContactAddress>().country());
                     saveNonexportableDetail(modified, modAddr);
+                    *hasChanged = true;
+                }
+                if (c.detail<QContactUrl>().url() != fromServer.detail<QContactUrl>().url()) {
+                    QContactUrl modUrl = modified.detail<QContactUrl>();
+                    modUrl.setUrl(fromServer.detail<QContactUrl>().url());
+                    modUrl.setSubType(fromServer.detail<QContactUrl>().subType());
+                    saveNonexportableDetail(modified, modUrl);
                     *hasChanged = true;
                 }
                 const QList<QContactPhoneNumber> &mphns(modified.details<QContactPhoneNumber>());
@@ -290,26 +301,22 @@ void VKContactSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 void VKContactSyncAdaptor::determineRemoteChanges(const QDateTime &remoteSince, const QString &accountId)
 {
     int accId = accountId.toInt();
-    requestData(accId, m_accessTokens[accId], 0, QString(), remoteSince);
+    requestData(accId, m_accessTokens[accId], 0, remoteSince);
 }
 
-void VKContactSyncAdaptor::requestData(int accountId, const QString &accessToken, int startIndex, const QString &continuationRequest, const QDateTime &syncTimestamp)
+void VKContactSyncAdaptor::requestData(int accountId, const QString &accessToken, int startIndex, const QDateTime &syncTimestamp)
 {
     QUrl requestUrl;
-    if (continuationRequest.isEmpty()) {
-        QUrlQuery urlQuery;
-        requestUrl = QUrl(QStringLiteral("https://api.vk.com/method/friends.get"));
-        if (startIndex >= 1) {
-            urlQuery.addQueryItem ("offset", QString::number(startIndex));
-        }
-        urlQuery.addQueryItem("count", QString::number(SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS));
-        urlQuery.addQueryItem("fields", QStringLiteral("uid,first_name,last_name,sex,screen_name,bdate,photo_max,contacts,city"));
-        urlQuery.addQueryItem("access_token", accessToken);
-        urlQuery.addQueryItem("v", QStringLiteral("5.21")); // version
-        requestUrl.setQuery(urlQuery);
-    } else {
-        requestUrl = QUrl(continuationRequest);
+    QUrlQuery urlQuery;
+    requestUrl = QUrl(QStringLiteral("https://api.vk.com/method/friends.get"));
+    if (startIndex >= 1) {
+        urlQuery.addQueryItem ("offset", QString::number(startIndex));
     }
+    urlQuery.addQueryItem("count", QString::number(SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS));
+    urlQuery.addQueryItem("fields", QStringLiteral("uid,first_name,last_name,sex,screen_name,bdate,photo_max,contacts,city,country"));
+    urlQuery.addQueryItem("access_token", accessToken);
+    urlQuery.addQueryItem("v", QStringLiteral("5.21")); // version
+    requestUrl.setQuery(urlQuery);
 
     QNetworkRequest req(requestUrl);
 
@@ -319,7 +326,6 @@ void VKContactSyncAdaptor::requestData(int accountId, const QString &accessToken
     if (reply) {
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
-        reply->setProperty("continuationRequest", continuationRequest);
         reply->setProperty("lastSyncTimestamp", syncTimestamp);
         reply->setProperty("startIndex", startIndex);
         connect(reply, SIGNAL(finished()), this, SLOT(contactsFinishedHandler()));
@@ -367,15 +373,18 @@ void VKContactSyncAdaptor::contactsFinishedHandler()
     }
 
     // parse the remote contact information from the response
-    QString continuationUrl;
-    QJsonObject obj = QJsonDocument::fromJson(data).object(); // XXX TODO: check errors / continuations / etc.
-    m_remoteContacts[accountId].append(parseContacts(obj.value("response").toObject().value("items").toArray(), accountId, accessToken, &continuationUrl));
+    QJsonObject obj = QJsonDocument::fromJson(data).object();
+    QJsonObject response = obj.value("response").toObject();
+    m_remoteContacts[accountId].append(parseContacts(response.value("items").toArray(), accountId, accessToken));
 
+    int totalCount = response.value("count").toInt();
+    int seenCount = startIndex + SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS;
     if (syncAborted()) {
         SOCIALD_LOG_INFO("sync aborted, not continuing sync of contacts from VK with account:" << accountId);
-    } else if (!continuationUrl.isEmpty()) {
-        startIndex += SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS;
-        requestData(accountId, accessToken, startIndex, continuationUrl, lastSyncTimestamp);
+    } else if (totalCount > seenCount) {
+        SOCIALD_LOG_TRACE("Have received" << seenCount << "contacts, now requesting:" << (seenCount+1) << "through to" << (seenCount+1+SOCIALD_VK_MAX_CONTACT_ENTRY_RESULTS));
+        startIndex = seenCount;
+        requestData(accountId, accessToken, startIndex, lastSyncTimestamp);
     } else {
         // we're finished downloading the remote changes - we should sync local changes up.
         continueSync(accountId, accessToken);
@@ -405,7 +414,17 @@ void VKContactSyncAdaptor::continueSync(int accountId, const QString &accessToke
 
     calculateRemoteDelta(m_remoteContacts[accountId], currentContacts, &adds, &mods, &dels);
     SOCIALD_LOG_INFO("VK contact sync with account" << accountId <<
-                     "got remote changes: a:" << adds.size() << "m:" << mods.size() << "r:" << dels.size());
+                     "got remote changes: a:" << adds.size() << "m:" << mods.size() << "r:" << dels.size() <<
+                     "from:" << m_remoteContacts[accountId].size() << "total, with" << currentContacts.size() << "pre-existing.");
+
+    if (mods.count() > currentContacts.size()) {
+        // guid matching must have gone wrong (perhaps the id of contacts was parsed incorrectly).
+        SOCIALD_LOG_ERROR("delta calculation failed: have more mods than existing contacts.  Aborting!");
+        purgeSyncStateData(QString::number(accountId));
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        decrementSemaphore(accountId);
+        return;
+    }
 
     for (int i = 0; i < adds.size(); ++i) {
         QContact c = adds[i];
@@ -570,11 +589,8 @@ bool VKContactSyncAdaptor::queueAvatarForDownload(int accountId, const QString &
 }
 
 
-QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int accountId, const QString &accessToken, QString *continuationUrl)
+QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int accountId, const QString &accessToken)
 {
-    // XXX TODO: parse the continuation URL!!
-    Q_UNUSED(continuationUrl)
-
     QList<QContact> retn;
     QJsonArray::const_iterator it = json.constBegin();
     for ( ; it != json.constEnd(); ++it) {
@@ -584,23 +600,26 @@ QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int 
         QString mobilePhone = obj.value("mobile_phone").toString();
         QString homePhone = obj.value("home_phone").toString();
 
-        if (mobilePhone.isEmpty() && homePhone.isEmpty()) {
-            // no contact information, skip
-            continue;
-        }
-
         // build the contact.
         QContact c;
-
-        QContactGuid guid;
-        int uidint = static_cast<int>(obj.value("uid").toDouble()); // horrible hack.
-        guid.setGuid(QStringLiteral("%1:%2").arg(accountId).arg(QString::number(uidint)));
-        saveNonexportableDetail(c, guid);
 
         QContactName name;
         name.setFirstName(obj.value("first_name").toString());
         name.setLastName(obj.value("last_name").toString());
         saveNonexportableDetail(c, name);
+
+        QContactGuid guid;
+        int idint = static_cast<int>(obj.value("id").toDouble()); // horrible hack.
+        int uidint = static_cast<int>(obj.value("uid").toDouble()); // horrible hack.
+        if (idint > 0) {
+            guid.setGuid(QStringLiteral("%1:%2").arg(accountId).arg(QString::number(idint)));
+        } else if (uidint > 0) {
+            guid.setGuid(QStringLiteral("%1:%2").arg(accountId).arg(QString::number(uidint)));
+        } else {
+            SOCIALD_LOG_ERROR("unable to parse id from VK friend, skipping:" << name);
+            continue;
+        }
+        saveNonexportableDetail(c, guid);
 
         if (obj.value("sex").toDouble() > 0) {
             double genderVal = obj.value("sex").toDouble();
@@ -635,9 +654,11 @@ QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int 
             saveNonexportableDetail(c, avatar);
         }
 
-        if (!obj.value("city").toObject().isEmpty() && !obj.value("city").toObject().value("title").toString().isEmpty()) {
+        if ((!obj.value("city").toObject().isEmpty() && !obj.value("city").toObject().value("title").toString().isEmpty())
+                || (!obj.value("country").toObject().isEmpty() && !obj.value("country").toObject().value("title").toString().isEmpty())) {
             QContactAddress addr;
             addr.setLocality(obj.value("city").toObject().value("title").toString());
+            addr.setCountry(obj.value("country").toObject().value("title").toString());
             saveNonexportableDetail(c, addr);
         }
 
@@ -655,6 +676,15 @@ QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int 
             num.setNumber(obj.value("mobile_phone").toString());
             saveNonexportableDetail(c, num);
         }
+
+        QContactUrl url;
+        if (idint > 0) {
+            url.setUrl(QUrl(QStringLiteral("https://m.vk.com/id%1").arg(idint)));
+        } else if (uidint > 0) {
+            url.setUrl(QUrl(QStringLiteral("https://m.vk.com/id%1").arg(uidint)));
+        }
+        url.setSubType(QContactUrl::SubTypeBlog);
+        saveNonexportableDetail(c, url);
 
         retn.append(c);
     }

@@ -58,7 +58,6 @@ private:
     void requestData(int accountId,
                      const QString &accessToken,
                      int startIndex = 0,
-                     const QString &continuationRequest = QString(),
                      const QDateTime &syncTimestamp = QDateTime());
 
 private Q_SLOTS:
@@ -71,7 +70,7 @@ private:
         Modify = 2,
         Remove = 3
     };
-    QList<QContact> parseContacts(const QJsonArray &json, int accountId, const QString &accessToken, QString *continuationUrl);
+    QList<QContact> parseContacts(const QJsonArray &json, int accountId, const QString &accessToken);
     void continueSync(int accountId, const QString &accessToken);
     void upsyncLocalChangesList(int accountId);
     void queueOutstandingAvatars(int accountId, const QString &accessToken);
