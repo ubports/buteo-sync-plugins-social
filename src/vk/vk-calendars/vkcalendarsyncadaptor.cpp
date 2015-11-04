@@ -174,9 +174,11 @@ void VKCalendarSyncAdaptor::finalCleanup()
     if (m_storageNeedsSave && !syncAborted()) {
         SOCIALD_LOG_DEBUG("saving changes in VK calendar to storage");
         m_storage->save();
-        // the notebook will have been set writable.  make the notebook read-only again.
-        m_vkNotebook->setIsReadOnly(true);
-        m_storage->save();
+        if (m_vkNotebook) {
+            // the notebook will have been set writable.  make the notebook read-only again.
+            m_vkNotebook->setIsReadOnly(true);
+            m_storage->save();
+        }
     } else {
         SOCIALD_LOG_DEBUG("no changes to VK calendar - not saving storage");
     }
@@ -184,20 +186,26 @@ void VKCalendarSyncAdaptor::finalCleanup()
     m_storage->close();
 }
 
-void VKCalendarSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode)
+void VKCalendarSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode mode)
 {
     // Delete the notebook and all events in it from the storage
+    SOCIALD_LOG_DEBUG("Purging calendar data for account:" << oldId);
+    if (mode == SocialNetworkSyncAdaptor::CleanUpPurge) {
+        // need to initialise the database
+        m_storage->open();
+    }
     Q_FOREACH (mKCal::Notebook::Ptr notebook, m_storage->notebooks()) {
         if (notebook->pluginName() == QStringLiteral(SOCIALD_VK_NAME)
                 && notebook->account() == QString::number(oldId)) {
-            KCalCore::Incidence::List allEvents;
-            m_storage->allIncidences(&allEvents, notebook->uid());
-            Q_FOREACH (const KCalCore::Incidence::Ptr event, allEvents) {
-                m_calendar->deleteIncidence(event);
-            }
+            SOCIALD_LOG_DEBUG("Purging notebook:" << notebook->uid() << "associated with account:" << oldId);
+            notebook->setIsReadOnly(false);
             m_storage->deleteNotebook(notebook);
             m_storageNeedsSave = true;
         }
+    }
+    if (mode == SocialNetworkSyncAdaptor::CleanUpPurge) {
+        // and commit any changes made.
+        finalCleanup();
     }
 }
 
