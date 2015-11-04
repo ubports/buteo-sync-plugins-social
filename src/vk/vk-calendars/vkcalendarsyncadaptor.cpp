@@ -32,6 +32,7 @@ namespace {
     }
     void jsonToKCal(const QString &vkId, const QJsonObject &json, KCalCore::Event::Ptr event, bool isUpdate)
     {
+        SOCIALD_LOG_DEBUG("Converting group event JSON to calendar event:" << json);
         if (!isUpdate) {
             QString eventUid = QUuid::createUuid().toString().mid(1);
             eventUid.chop(1);
@@ -40,7 +41,9 @@ namespace {
         }
         event->setSummary(json.value(QStringLiteral("name")).toString());
         event->setDescription(json.value(QStringLiteral("description")).toString());
-        event->setLocation(json.value(QStringLiteral("place")).toObject().value(QStringLiteral("title")).toString());
+        QString eventAddress = json.value(QStringLiteral("place")).toObject().value(QStringLiteral("address")).toString();
+        QString addressTitle = json.value(QStringLiteral("place")).toObject().value(QStringLiteral("title")).toString();
+        event->setLocation(eventAddress.isEmpty() ? addressTitle : eventAddress);
         if (json.contains(QStringLiteral("start_date"))) {
             uint startTime = json.value(QStringLiteral("start_date")).toDouble();
             event->setDtStart(KDateTime(QDateTime::fromTime_t(startTime)));
@@ -135,7 +138,9 @@ void VKCalendarSyncAdaptor::finalize(int accountId)
                 if (eventNeedsUpdate(event, eventObject)) {
                     m_vkNotebook->setIsReadOnly(false); // temporarily
                     event->startUpdates();
+                    event->setReadOnly(false);
                     jsonToKCal(vkId, eventObject, event, true);
+                    event->setReadOnly(true);
                     event->endUpdates();
                     m_storageNeedsSave = true;
                     modifiedCount += 1;
@@ -153,6 +158,7 @@ void VKCalendarSyncAdaptor::finalize(int accountId)
             const QJsonObject &eventObject(m_eventObjects[accountId][vkId]);
             KCalCore::Event::Ptr event = KCalCore::Event::Ptr(new KCalCore::Event);
             jsonToKCal(vkId, eventObject, event, false); // direct conversion
+            event->setReadOnly(true);
             if (!m_calendar->addEvent(event, m_vkNotebook->uid())) {
                 SOCIALD_LOG_TRACE("failed to add new event:" << event->summary() << ":" << event->dtStart().toString() << "to notebook:" << m_vkNotebook->uid());
                 continue;
@@ -177,6 +183,7 @@ void VKCalendarSyncAdaptor::finalCleanup()
         if (m_vkNotebook) {
             // the notebook will have been set writable.  make the notebook read-only again.
             m_vkNotebook->setIsReadOnly(true);
+            m_storage->updateNotebook(m_vkNotebook);
             m_storage->save();
         }
     } else {

@@ -88,7 +88,7 @@ void VKPostSyncAdaptor::finalize(int accountId)
 void VKPostSyncAdaptor::requestPosts(int accountId, const QString &accessToken)
 {
     QDateTime since = lastSuccessfulSyncTime(accountId);
-    if (!since.isValid()) {
+    if (!since.isValid() || since > QDateTime::currentDateTimeUtc()) {
         int sinceSpan = m_accountSyncProfile
                       ? m_accountSyncProfile->key(Buteo::KEY_SYNC_SINCE_DAYS_PAST, QStringLiteral("7")).toInt()
                       : 7;
@@ -98,7 +98,7 @@ void VKPostSyncAdaptor::requestPosts(int accountId, const QString &accessToken)
     QList<QPair<QString, QString> > queryItems;
     queryItems.append(QPair<QString, QString>(QStringLiteral("access_token"), accessToken));
     queryItems.append(QPair<QString, QString>(QStringLiteral("extended"), QStringLiteral("1")));
-    queryItems.append(QPair<QString, QString>(QStringLiteral("v"), QStringLiteral("5.21"))); // version
+    queryItems.append(QPair<QString, QString>(QStringLiteral("v"), QStringLiteral("5.37"))); // version
     queryItems.append(QPair<QString, QString>(QStringLiteral("filters"), QStringLiteral("post,photo,photo_tag,wall_photo,note")));
     queryItems.append(QPair<QString, QString>(QStringLiteral("start_time"), QString::number(since.toTime_t())));
 
