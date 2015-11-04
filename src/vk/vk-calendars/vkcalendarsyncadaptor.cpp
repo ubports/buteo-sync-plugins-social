@@ -32,6 +32,7 @@ namespace {
     }
     void jsonToKCal(const QString &vkId, const QJsonObject &json, KCalCore::Event::Ptr event, bool isUpdate)
     {
+        SOCIALD_LOG_DEBUG("Converting group event JSON to calendar event:" << json);
         if (!isUpdate) {
             QString eventUid = QUuid::createUuid().toString().mid(1);
             eventUid.chop(1);
@@ -40,7 +41,9 @@ namespace {
         }
         event->setSummary(json.value(QStringLiteral("name")).toString());
         event->setDescription(json.value(QStringLiteral("description")).toString());
-        event->setLocation(json.value(QStringLiteral("place")).toObject().value(QStringLiteral("title")).toString());
+        QString eventAddress = json.value(QStringLiteral("place")).toObject().value(QStringLiteral("address")).toString();
+        QString addressTitle = json.value(QStringLiteral("place")).toObject().value(QStringLiteral("title")).toString();
+        event->setLocation(eventAddress.isEmpty() ? addressTitle : eventAddress);
         if (json.contains(QStringLiteral("start_date"))) {
             uint startTime = json.value(QStringLiteral("start_date")).toDouble();
             event->setDtStart(KDateTime(QDateTime::fromTime_t(startTime)));
