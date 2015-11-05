@@ -54,24 +54,30 @@ protected: // implementing VKDataTypeSyncAdaptor interface
 
 private:
     void requestData(int accountId, const QString &accessToken, const QString &continuationUrl,
-                     const QString &vkUserId, const QString &vkAlbumId);
+                     const QString &vkUserId, const QString &vkAlbumId, bool restarted = false);
     void possiblyAddNewUser(const QString &vkUserId, int accountId, const QString &accessToken);
-
+    void requestQueuedAlbum(const QString &accessToken);
+    bool startThrottleTimerIfRequired(QJsonObject &parsed, int accountId, const QString &accessToken,
+                                      const QString &vkUserId, const QString &vkAlbumId,
+                                      const QString &continuationUrl);
 
 private Q_SLOTS:
     void albumsFinishedHandler();
     void imagesFinishedHandler();
     void userFinishedHandler();
+    void throttleTimerTimeout();
 
 private:
     QList<VKAlbum::ConstPtr> m_receivedAlbums;
     QList<VKImage::ConstPtr> m_receivedPhotos;
     QList<VKUser::ConstPtr> m_receivedUsers;
     QSet<QString> m_requestedUsers; // only want to request the user information once.
-    QSet<QString> m_requestedPhotosForOwnerAndAlbum; // owner_id:album_id
+    QList<QString> m_requestedPhotosForOwnerAndAlbum; // owner_id:album_id:account_id
     QList<VKAlbum::ConstPtr> m_emptyAlbums;
     VKImagesDatabase m_db;
     bool m_syncError;
+    int m_currentAlbumIndex;
+    QTimer m_throttleTimer;
 };
 
 #endif // VKIMAGESYNCADAPTOR_H

@@ -30,6 +30,8 @@
 #include <QtNetwork/QNetworkReply>
 
 #define VK_IMAGES_MAX_COUNT 1000 /* maximum images returned per request */
+#define VK_THROTTLE_TIMER_TIMEOUT 5000
+#define VK_THROTTLE_ERROR 6
 
 // Currently, we integrate with the device image gallery via saving thumbnails to the
 // ~/.local/share/system/privileged/Images directory, and filling the
@@ -39,8 +41,10 @@
 VKImageSyncAdaptor::VKImageSyncAdaptor(QObject *parent)
     : VKDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Images, parent)
     , m_syncError(false)
+    , m_currentAlbumIndex(0)
 {
     setInitialActive(m_db.isValid());
+    connect(&m_throttleTimer, SIGNAL(timeout()), this, SLOT(throttleTimerTimeout()));
 }
 
 VKImageSyncAdaptor::~VKImageSyncAdaptor()
@@ -140,7 +144,7 @@ void VKImageSyncAdaptor::finalize(int accountId)
             } else if (emptiedAlbumIds[photo->ownerId()].contains(photo->albumId())) {
                 // the album has been emptied server-side.  every photo in it needs to be deleted.
                 deletedPhotos.append(photo);
-            } else if (!m_requestedPhotosForOwnerAndAlbum.contains(QStringLiteral("%1:%2").arg(photo->ownerId()).arg(photo->albumId()))) {
+            } else if (!m_requestedPhotosForOwnerAndAlbum.contains(QStringLiteral("%1:%2:%3").arg(photo->ownerId()).arg(photo->albumId()).arg(accountId))) {
                 // this album wasn't modified, so we didn't request photos from it.
                 // that is, every photo in it is unchanged.
                 unmodifiedPhotos.append(photo);
@@ -198,7 +202,8 @@ void VKImageSyncAdaptor::requestData(int accountId,
                                      const QString &accessToken,
                                      const QString &continuationUrl,
                                      const QString &vkUserId,
-                                     const QString &vkAlbumId)
+                                     const QString &vkAlbumId,
+                                     bool restarted)
 {
     if (syncAborted()) {
         SOCIALD_LOG_DEBUG("skipping data request due to sync abort");
@@ -257,8 +262,11 @@ void VKImageSyncAdaptor::requestData(int accountId,
             connect(reply, SIGNAL(finished()), this, SLOT(imagesFinishedHandler()));
         }
 
-        // we're requesting data.  Increment the semaphore so that we know we're still busy.
-        incrementSemaphore(accountId);
+        // we're requesting data.  Increment the semaphore so that we know we're still busy
+        // unless this was restarted call.
+        if (!restarted) {
+            incrementSemaphore(accountId);
+        }
         setupReplyTimeout(accountId, reply);
     } else {
         SOCIALD_LOG_ERROR("unable to request data from VK account with id" << accountId);
@@ -281,6 +289,13 @@ void VKImageSyncAdaptor::albumsFinishedHandler()
     bool ok = false;
     QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
     if (isError || !ok || !parsed.contains(QLatin1String("response"))) {
+        if (startThrottleTimerIfRequired(parsed, accountId, accessToken, QString(), QString(), QString())) {
+            // we hit the throttle limit, let throttle timer repeat the request.
+            // don't decrement semaphore as this call will continue
+            // after the break.
+            return;
+        }
+
         SOCIALD_LOG_ERROR("unable to read albums response for VK account with id" << accountId);
         m_syncError = true;
         decrementSemaphore(accountId);
@@ -324,8 +339,7 @@ void VKImageSyncAdaptor::albumsFinishedHandler()
         if (created > lastSyncTimestampForAlbum || updated > lastSyncTimestampForAlbum || (created == 0 && updated == 0)) {
             SOCIALD_LOG_DEBUG("Need to request photos for album:" << id << title << "with timestamps:" <<
                               created << "+" << updated << ">" << lastSyncTimestampForAlbum);
-            m_requestedPhotosForOwnerAndAlbum.insert(QStringLiteral("%1:%2").arg(ownerId).arg(id));
-            requestData(accountId, accessToken, QString(), ownerId, id);
+            m_requestedPhotosForOwnerAndAlbum.append(QStringLiteral("%1:%2:%3").arg(ownerId).arg(id).arg(accountId));
         } else {
             SOCIALD_LOG_DEBUG("No need to request photos for album:" << id << title << "with timestamps:" <<
                               created << "+" << updated << "<=" << lastSyncTimestampForAlbum);
@@ -334,6 +348,10 @@ void VKImageSyncAdaptor::albumsFinishedHandler()
         // request the information for user who owns this album if necessary
         possiblyAddNewUser(ownerId, accountId, accessToken);
     }
+
+    // start downloading album content
+    m_currentAlbumIndex = 0;
+    requestQueuedAlbum(accessToken);
 
     // Finally, reduce our semaphore.
     decrementSemaphore(accountId);
@@ -357,6 +375,13 @@ void VKImageSyncAdaptor::imagesFinishedHandler()
     bool ok = false;
     QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
     if (isError || !ok || !parsed.contains(QLatin1String("response"))) {
+        if (startThrottleTimerIfRequired(parsed, accountId, accessToken, vkUserId, vkAlbumId, continuationUrl)) {
+            // we hit the throttle limit, let throttle timer repeat the request
+            // don't decrement semaphore as this call will continue
+            // after the break.
+            return;
+        }
+
         SOCIALD_LOG_ERROR("unable to read photos response for VK account with id" << accountId);
         m_syncError = true;
         decrementSemaphore(accountId);
@@ -368,8 +393,6 @@ void VKImageSyncAdaptor::imagesFinishedHandler()
         SOCIALD_LOG_DEBUG("album with id" << vkAlbumId << "from VK account with id" << accountId << "has no photos");
         VKAlbum::Ptr emptyAlbum = VKAlbum::create(vkAlbumId, vkUserId, QString(), QString(), QString(), QString(), 0, 0, 0, accountId);
         m_emptyAlbums.append(emptyAlbum);
-        decrementSemaphore(accountId);
-        return;
     }
 
     // read the photos information
@@ -413,6 +436,7 @@ void VKImageSyncAdaptor::imagesFinishedHandler()
 
         // append the photo to our internal list.
         SOCIALD_LOG_DEBUG("have new photo:" << id << src << height << width << date);
+
         m_receivedPhotos.append(VKImage::create(id, vkAlbumId, vkUserId, text, thumbSrc,
                                                 src, QString(), QString(),
                                                 width, height, date, accountId));
@@ -431,8 +455,10 @@ void VKImageSyncAdaptor::imagesFinishedHandler()
         continuation.setQuery(queryItems);
         SOCIALD_LOG_DEBUG("performing continuation request for album:" << vkAlbumId << ":" << continuation.toString());
         requestData(accountId, accessToken, continuation.toString(), vkUserId, vkAlbumId);
+    } else {
+        // Load next album if there are unhandled ones in the queue
+        requestQueuedAlbum(accessToken);
     }
-
 
     // we're finished this request.  Decrement our busy semaphore.
     decrementSemaphore(accountId);
@@ -498,4 +524,57 @@ void VKImageSyncAdaptor::userFinishedHandler()
     m_receivedUsers.append(VKUser::create(id, firstName, lastName, photoSrc, QString(), accountId));
 
     decrementSemaphore(accountId);
+}
+
+void VKImageSyncAdaptor::throttleTimerTimeout()
+{
+    SOCIALD_LOG_DEBUG("VK throttle timer expired");
+
+    m_throttleTimer.stop();
+    int accountId = m_throttleTimer.property("accountId").toInt();
+    QString accessToken = m_throttleTimer.property("accessToken").toString();
+    QString vkUserId = m_throttleTimer.property("vkUserId").toString();
+    QString vkAlbumId = m_throttleTimer.property("vkAlbumId").toString();
+    QString continuationUrl = m_throttleTimer.property("continuationUrl").toString();
+
+    requestData(accountId, accessToken, continuationUrl,
+                vkUserId, vkAlbumId, true);
+}
+
+void VKImageSyncAdaptor::requestQueuedAlbum(const QString &accessToken)
+{
+    // take next album from the queue and load it
+    if (m_currentAlbumIndex < m_requestedPhotosForOwnerAndAlbum.count()) {
+        QStringList parts = m_requestedPhotosForOwnerAndAlbum.at(m_currentAlbumIndex).split(":", QString::SkipEmptyParts);
+        QString ownerId = parts.at(0);
+        QString id = parts.at(1);
+        int accountId = parts.at(2).toInt();
+        SOCIALD_LOG_DEBUG("start loading VK album:" << id << ownerId << accountId);
+        m_currentAlbumIndex++;
+        requestData(accountId, accessToken, QString(), ownerId, id);
+    }
+}
+
+bool VKImageSyncAdaptor::startThrottleTimerIfRequired(QJsonObject &parsed, int accountId, const QString &accessToken,
+                                                      const QString &vkUserId, const QString &vkAlbumId,
+                                                      const QString &continuationUrl)
+{
+    if (parsed.contains(QLatin1String("error"))) {
+        QJsonObject error = parsed.value(QLatin1String("error")).toObject();
+        int errorCode = error.value(QLatin1String("error_code")).toInt();
+        if (errorCode == VK_THROTTLE_ERROR) {
+            // we have hit the server rate limit.
+            // wait a few of seconds and try again.
+            SOCIALD_LOG_DEBUG("VK server rate limit exceeded, start throttle timer");
+            m_throttleTimer.setProperty("accountId", accountId);
+            m_throttleTimer.setProperty("accessToken", accessToken);
+            m_throttleTimer.setProperty("vkUserId", vkUserId);
+            m_throttleTimer.setProperty("vkAlbumId", vkAlbumId);
+            m_throttleTimer.setProperty("continuationUrl", continuationUrl);
+            m_throttleTimer.start(VK_THROTTLE_TIMER_TIMEOUT);
+            return true;
+        }
+    }
+
+    return false;
 }
