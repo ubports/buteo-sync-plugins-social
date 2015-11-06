@@ -27,11 +27,14 @@
 #include <QtCore/QDir>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
+#include <QtCore/QCryptographicHash>
 
 #include <Accounts/Manager>
 #include <Accounts/Account>
 
 #include <MGConfItem>
+
+#include <ssudeviceinfo.h>
 
 static void debugDumpResponse(const QByteArray &data)
 {
@@ -70,7 +73,16 @@ void OneDriveBackupSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkS
 
 void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 {
-    QString defaultRemotePath = QString::fromLatin1("backups");
+    QString deviceId = SsuDeviceInfo().deviceUid();
+    QByteArray hashedDeviceId = QCryptographicHash::hash(deviceId.toUtf8(), QCryptographicHash::Sha256);
+    QString encodedDeviceId = QString::fromUtf8(hashedDeviceId.toBase64()).mid(0,12);
+    if (deviceId.isEmpty()) {
+        SOCIALD_LOG_ERROR("Could not determine device identifier; cannot create remote per-device backup directory!");
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        return;
+    }
+
+    QString defaultRemotePath = QString::fromLatin1("Backups/%1").arg(encodedDeviceId);
     QString defaultLocalPath = QString::fromLatin1("%1/Backups/")
                                .arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
 

@@ -18,6 +18,7 @@ BuildRequires:  pkgconfig(accounts-qt5) >= 1.13
 BuildRequires:  pkgconfig(socialcache) >= 0.0.48
 BuildRequires:  pkgconfig(libsailfishkeyprovider)
 BuildRequires:  qt5-qttools-linguist
+BuildRequires:  ssu-devel
 Requires: buteo-syncfw-qt5-msyncd
 Obsoletes: buteo-sync-plugins-google-simple <= 0.0.2
 Provides: buteo-sync-plugins-google-simple
