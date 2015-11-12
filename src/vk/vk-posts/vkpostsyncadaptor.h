@@ -36,6 +36,7 @@ protected: // implementing VKDataTypeSyncAdaptor interface
     void purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode mode);
     void beginSync(int accountId, const QString &accessToken);
     void finalize(int accountId);
+    void retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached);
 
 private:
     void requestPosts(int accountId, const QString &accessToken);

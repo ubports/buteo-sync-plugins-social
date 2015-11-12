@@ -30,8 +30,6 @@
 #include <QtNetwork/QNetworkReply>
 
 #define VK_IMAGES_MAX_COUNT 1000 /* maximum images returned per request */
-#define VK_THROTTLE_TIMER_TIMEOUT 5000
-#define VK_THROTTLE_ERROR 6
 
 // Currently, we integrate with the device image gallery via saving thumbnails to the
 // ~/.local/share/system/privileged/Images directory, and filling the
@@ -44,7 +42,6 @@ VKImageSyncAdaptor::VKImageSyncAdaptor(QObject *parent)
     , m_currentAlbumIndex(0)
 {
     setInitialActive(m_db.isValid());
-    connect(&m_throttleTimer, SIGNAL(timeout()), this, SLOT(throttleTimerTimeout()));
 }
 
 VKImageSyncAdaptor::~VKImageSyncAdaptor()
@@ -80,6 +77,7 @@ void VKImageSyncAdaptor::finalize(int accountId)
         SOCIALD_LOG_INFO("sync aborted, won't commit database changes");
     } else if (m_syncError) {
         SOCIALD_LOG_INFO("sync error, won't commit database changes");
+        setStatus(SocialNetworkSyncAdaptor::Error);
     } else {
         // Determine album delta.
         QHash<QString, QSet<QString> > deletedAlbumIds; // user to deleted album ids
@@ -198,12 +196,34 @@ void VKImageSyncAdaptor::finalize(int accountId)
     }
 }
 
+void VKImageSyncAdaptor::retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached)
+{
+    int accountId = args[0].toInt();
+    if (retryLimitReached) {
+        SOCIALD_LOG_ERROR("hit request retry limit! unable to request data from VK account with id" << accountId);
+        m_syncError = true;
+    } else {
+        SOCIALD_LOG_DEBUG("retrying Images" << request << "request for VK account:" << accountId);
+        if (request == QStringLiteral("requestData")) {
+            requestData(accountId,
+                        args[1].toString(),
+                        args[2].toString(),
+                        args[3].toString(),
+                        args[4].toString());
+        } else {
+            possiblyAddNewUser(accountId,
+                               args[1].toString(),
+                               args[2].toString());
+        }
+    }
+    decrementSemaphore(accountId); // finished waiting for the request.
+}
+
 void VKImageSyncAdaptor::requestData(int accountId,
                                      const QString &accessToken,
                                      const QString &continuationUrl,
                                      const QString &vkUserId,
-                                     const QString &vkAlbumId,
-                                     bool restarted)
+                                     const QString &vkAlbumId)
 {
     if (syncAborted()) {
         SOCIALD_LOG_DEBUG("skipping data request due to sync abort");
@@ -262,15 +282,17 @@ void VKImageSyncAdaptor::requestData(int accountId,
             connect(reply, SIGNAL(finished()), this, SLOT(imagesFinishedHandler()));
         }
 
-        // we're requesting data.  Increment the semaphore so that we know we're still busy
-        // unless this was restarted call.
-        if (!restarted) {
-            incrementSemaphore(accountId);
-        }
+        // we're requesting data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId);
         setupReplyTimeout(accountId, reply);
     } else {
-        SOCIALD_LOG_ERROR("unable to request data from VK account with id" << accountId);
-        m_syncError = true;
+        // request was throttled by VKNetworkAccessManager
+        QVariantList args;
+        args << accountId << accessToken << continuationUrl << vkUserId << vkAlbumId;
+        enqueueThrottledRequest(QStringLiteral("requestData"), args);
+
+        // we are waiting to request data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId); // decremented in retryThrottledRequest().
     }
 }
 
@@ -289,10 +311,11 @@ void VKImageSyncAdaptor::albumsFinishedHandler()
     bool ok = false;
     QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
     if (isError || !ok || !parsed.contains(QLatin1String("response"))) {
-        if (startThrottleTimerIfRequired(parsed, accountId, accessToken, QString(), QString(), QString())) {
+        QVariantList args; args << accountId << accessToken << QString() << QString() << QString();
+        if (enqueueServerThrottledRequestIfRequired(parsed, QStringLiteral("requestData"), args)) {
             // we hit the throttle limit, let throttle timer repeat the request.
-            // don't decrement semaphore as this call will continue
-            // after the break.
+            // don't decrement semaphore yet as we're still waiting for it.
+            // it will be decremented in retryThrottledRequest().
             return;
         }
 
@@ -346,7 +369,7 @@ void VKImageSyncAdaptor::albumsFinishedHandler()
         }
 
         // request the information for user who owns this album if necessary
-        possiblyAddNewUser(ownerId, accountId, accessToken);
+        possiblyAddNewUser(accountId, accessToken, ownerId);
     }
 
     // start downloading album content
@@ -375,10 +398,11 @@ void VKImageSyncAdaptor::imagesFinishedHandler()
     bool ok = false;
     QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
     if (isError || !ok || !parsed.contains(QLatin1String("response"))) {
-        if (startThrottleTimerIfRequired(parsed, accountId, accessToken, vkUserId, vkAlbumId, continuationUrl)) {
+        QVariantList args; args << accountId << accessToken << vkUserId << vkAlbumId << continuationUrl;
+        if (enqueueServerThrottledRequestIfRequired(parsed, QStringLiteral("requestData"), args)) {
             // we hit the throttle limit, let throttle timer repeat the request
-            // don't decrement semaphore as this call will continue
-            // after the break.
+            // don't decrement semaphore yet as we're still waiting for it.
+            // it will be decremented in retryThrottledRequest().
             return;
         }
 
@@ -464,7 +488,7 @@ void VKImageSyncAdaptor::imagesFinishedHandler()
     decrementSemaphore(accountId);
 }
 
-void VKImageSyncAdaptor::possiblyAddNewUser(const QString &vkUserId, int accountId, const QString &accessToken)
+void VKImageSyncAdaptor::possiblyAddNewUser(int accountId, const QString &accessToken, const QString &vkUserId)
 {
     QString dbUserId;
     VKUser::ConstPtr dbUser = m_db.user(accountId);
@@ -490,6 +514,7 @@ void VKImageSyncAdaptor::possiblyAddNewUser(const QString &vkUserId, int account
     if (reply) {
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
+        reply->setProperty("vkUserId", vkUserId);
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)),
                 this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)),
@@ -498,6 +523,14 @@ void VKImageSyncAdaptor::possiblyAddNewUser(const QString &vkUserId, int account
 
         incrementSemaphore(accountId);
         setupReplyTimeout(accountId, reply);
+    } else {
+        // request was throttled by VKNetworkAccessManager
+        QVariantList args;
+        args << accountId << accessToken << vkUserId;
+        enqueueThrottledRequest(QStringLiteral("possiblyAddNewUser"), args);
+
+        // we are waiting to request data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId); // decremented in retryThrottledRequest().
     }
 }
 
@@ -506,12 +539,22 @@ void VKImageSyncAdaptor::userFinishedHandler()
     QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
     QByteArray replyData = reply->readAll();
     int accountId = reply->property("accountId").toInt();
+    QString accessToken = reply->property("accessToken").toString();
+    QString vkUserId = reply->property("vkUserId").toString();
     disconnect(reply);
     reply->deleteLater();
 
     bool ok = false;
     QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
     if (!ok || !parsed.contains(QLatin1String("response")) || !parsed.value(QLatin1String("response")).toArray().size()) {
+        QVariantList args;
+        args << accountId << accessToken << vkUserId;
+        if (enqueueServerThrottledRequestIfRequired(parsed, QStringLiteral("possiblyAddNewUser"), args)) {
+            // we hit the throttle limit, let throttle timer repeat the request
+            // don't decrement semaphore yet as we're still waiting for it.
+            // it will be decremented in retryThrottledRequest().
+            return;
+        }
         SOCIALD_LOG_ERROR("unable to read users.get response for VK account with id" << accountId);
         return;
     }
@@ -526,21 +569,6 @@ void VKImageSyncAdaptor::userFinishedHandler()
     decrementSemaphore(accountId);
 }
 
-void VKImageSyncAdaptor::throttleTimerTimeout()
-{
-    SOCIALD_LOG_DEBUG("VK throttle timer expired");
-
-    m_throttleTimer.stop();
-    int accountId = m_throttleTimer.property("accountId").toInt();
-    QString accessToken = m_throttleTimer.property("accessToken").toString();
-    QString vkUserId = m_throttleTimer.property("vkUserId").toString();
-    QString vkAlbumId = m_throttleTimer.property("vkAlbumId").toString();
-    QString continuationUrl = m_throttleTimer.property("continuationUrl").toString();
-
-    requestData(accountId, accessToken, continuationUrl,
-                vkUserId, vkAlbumId, true);
-}
-
 void VKImageSyncAdaptor::requestQueuedAlbum(const QString &accessToken)
 {
     // take next album from the queue and load it
@@ -553,28 +581,4 @@ void VKImageSyncAdaptor::requestQueuedAlbum(const QString &accessToken)
         m_currentAlbumIndex++;
         requestData(accountId, accessToken, QString(), ownerId, id);
     }
-}
-
-bool VKImageSyncAdaptor::startThrottleTimerIfRequired(QJsonObject &parsed, int accountId, const QString &accessToken,
-                                                      const QString &vkUserId, const QString &vkAlbumId,
-                                                      const QString &continuationUrl)
-{
-    if (parsed.contains(QLatin1String("error"))) {
-        QJsonObject error = parsed.value(QLatin1String("error")).toObject();
-        int errorCode = error.value(QLatin1String("error_code")).toInt();
-        if (errorCode == VK_THROTTLE_ERROR) {
-            // we have hit the server rate limit.
-            // wait a few of seconds and try again.
-            SOCIALD_LOG_DEBUG("VK server rate limit exceeded, start throttle timer");
-            m_throttleTimer.setProperty("accountId", accountId);
-            m_throttleTimer.setProperty("accessToken", accessToken);
-            m_throttleTimer.setProperty("vkUserId", vkUserId);
-            m_throttleTimer.setProperty("vkAlbumId", vkAlbumId);
-            m_throttleTimer.setProperty("continuationUrl", continuationUrl);
-            m_throttleTimer.start(VK_THROTTLE_TIMER_TIMEOUT);
-            return true;
-        }
-    }
-
-    return false;
 }

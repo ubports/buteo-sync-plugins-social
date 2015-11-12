@@ -43,7 +43,7 @@
 #include <SignOn/SessionData>
 
 FacebookDataTypeSyncAdaptor::FacebookDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::DataType dataType, QObject *parent)
-    : SocialNetworkSyncAdaptor("facebook", dataType, parent), m_triedLoading(false)
+    : SocialNetworkSyncAdaptor("facebook", dataType, 0, parent), m_triedLoading(false)
 {
 }
 

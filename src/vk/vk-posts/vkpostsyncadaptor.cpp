@@ -85,6 +85,19 @@ void VKPostSyncAdaptor::finalize(int accountId)
     }
 }
 
+void VKPostSyncAdaptor::retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached)
+{
+    int accountId = args[0].toInt();
+    if (retryLimitReached) {
+        SOCIALD_LOG_ERROR("hit request retry limit! unable to request data from VK account with id" << accountId);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+    } else {
+        SOCIALD_LOG_DEBUG("retrying Posts" << request << "request for VK account:" << accountId);
+        requestPosts(accountId, args[1].toString());
+    }
+    decrementSemaphore(accountId); // finished waiting for the request.
+}
+
 void VKPostSyncAdaptor::requestPosts(int accountId, const QString &accessToken)
 {
     QDateTime since = lastSuccessfulSyncTime(accountId);
@@ -119,7 +132,13 @@ void VKPostSyncAdaptor::requestPosts(int accountId, const QString &accessToken)
         incrementSemaphore(accountId);
         setupReplyTimeout(accountId, reply);
     } else {
-        SOCIALD_LOG_ERROR("error: unable to request home posts from VK account with id:" << accountId);
+        // request was throttled by VKNetworkAccessManager
+        QVariantList args;
+        args << accountId << accessToken;
+        enqueueThrottledRequest(QStringLiteral("requestPosts"), args);
+
+        // we are waiting to request data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId); // decremented in retryThrottledRequest().
     }
 }
 
@@ -128,6 +147,7 @@ void VKPostSyncAdaptor::finishedPostsHandler()
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
     bool isError = reply->property("isError").toBool();
     int accountId = reply->property("accountId").toInt();
+    QString accessToken = reply->property("accessToken").toString();
 
     QByteArray replyData = reply->readAll();
     disconnect(reply);
@@ -181,6 +201,14 @@ void VKPostSyncAdaptor::finishedPostsHandler()
             }
         }
     } else {
+        QVariantList args;
+        args << accountId << accessToken;
+        if (enqueueServerThrottledRequestIfRequired(parsed, QStringLiteral("requestPosts"), args)) {
+            // we hit the throttle limit, let throttle timer repeat the request.
+            // don't decrement semaphore yet as we're still waiting for it.
+            // it will be decremented in retryThrottledRequest().
+            return;
+        }
         // error occurred during request.
         SOCIALD_LOG_ERROR("error: unable to parse event feed data from request with account"
                           << accountId << "got:" << QString::fromUtf8(replyData));

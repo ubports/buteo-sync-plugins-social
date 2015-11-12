@@ -277,6 +277,20 @@ void VKContactSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSyncAd
     }
 }
 
+void VKContactSyncAdaptor::retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached)
+{
+    int accountId = args[0].toInt();
+    if (retryLimitReached) {
+        SOCIALD_LOG_ERROR("hit request retry limit! unable to request data from VK account with id" << accountId);
+        purgeSyncStateData(QString::number(accountId));
+        setStatus(SocialNetworkSyncAdaptor::Error);
+    } else {
+        SOCIALD_LOG_DEBUG("retrying Contacts" << request << "request for VK account:" << accountId);
+        requestData(accountId, args[1].toString(), args[2].toInt(), args[3].toDateTime());
+    }
+    decrementSemaphore(accountId); // finished waiting for the request.
+}
+
 void VKContactSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 {
     // clear our cache lists if necessary.
@@ -326,18 +340,21 @@ void VKContactSyncAdaptor::requestData(int accountId, const QString &accessToken
     if (reply) {
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
-        reply->setProperty("lastSyncTimestamp", syncTimestamp);
         reply->setProperty("startIndex", startIndex);
+        reply->setProperty("lastSyncTimestamp", syncTimestamp);
         connect(reply, SIGNAL(finished()), this, SLOT(contactsFinishedHandler()));
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(sslErrorsHandler(QList<QSslError>)));
         m_apiRequestsRemaining[accountId] = m_apiRequestsRemaining[accountId] - 1;
         setupReplyTimeout(accountId, reply);
     } else {
-        SOCIALD_LOG_ERROR("unable to request data from VK account with id:" << accountId);
-        purgeSyncStateData(QString::number(accountId));
-        setStatus(SocialNetworkSyncAdaptor::Error);
-        decrementSemaphore(accountId);
+        // request was throttled by VKNetworkAccessManager
+        QVariantList args;
+        args << accountId << accessToken << startIndex << syncTimestamp;
+        enqueueThrottledRequest(QStringLiteral("requestData"), args);
+
+        // we are waiting to request data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId); // decremented in retryThrottledRequest().
     }
 }
 
@@ -345,9 +362,9 @@ void VKContactSyncAdaptor::contactsFinishedHandler()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
     QByteArray data = reply->readAll();
-    int startIndex = reply->property("startIndex").toInt();
     int accountId = reply->property("accountId").toInt();
     QString accessToken = reply->property("accessToken").toString();
+    int startIndex = reply->property("startIndex").toInt();
     QDateTime lastSyncTimestamp = reply->property("lastSyncTimestamp").toDateTime();
     bool isError = reply->property("isError").toBool();
     reply->deleteLater();
@@ -359,6 +376,16 @@ void VKContactSyncAdaptor::contactsFinishedHandler()
     }
 
     if (isError) {
+        QVariantList args;
+        args << accountId << accessToken << startIndex << lastSyncTimestamp;
+        bool ok = true;
+        QJsonObject parsed = parseJsonObjectReplyData(data, &ok);
+        if (enqueueServerThrottledRequestIfRequired(parsed, QStringLiteral("requestData"), args)) {
+            // we hit the throttle limit, let throttle timer repeat the request
+            // don't decrement semaphore yet as we're still waiting for it.
+            // it will be decremented in retryThrottledRequest().
+            return;
+        }
         SOCIALD_LOG_ERROR("error occurred when performing contacts request for VK account:" << accountId);
         purgeSyncStateData(QString::number(accountId));
         setStatus(SocialNetworkSyncAdaptor::Error);

@@ -12,6 +12,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QString>
+#include <QtCore/QVariantList>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QSslError>
 #include <QtCore/QJsonObject>
@@ -85,6 +86,12 @@ protected:
     static UserProfile findUserProfile(const QList<UserProfile> &profiles, int uid);
     static GroupProfile findGroupProfile(const QList<GroupProfile> &profiles, int uid);
 
+    void enqueueThrottledRequest(const QString &request, const QVariantList &args, int interval = 0);
+    bool enqueueServerThrottledRequestIfRequired(const QJsonObject &parsed,
+                                                 const QString &request,
+                                                 const QVariantList &args);
+    virtual void retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached) = 0;
+
 protected Q_SLOTS:
     virtual void errorHandler(QNetworkReply::NetworkError err);
     virtual void sslErrorsHandler(const QList<QSslError> &errs);
@@ -92,6 +99,7 @@ protected Q_SLOTS:
 private Q_SLOTS:
     void signOnError(const SignOn::Error &error);
     void signOnResponse(const SignOn::SessionData &responseData);
+    void throttleTimerTimeout();
 
 private:
     void loadClientId();
@@ -99,6 +107,8 @@ private:
     void signIn(Accounts::Account *account);
     bool m_triedLoading; // Is true if we tried to load (even if we failed)
     QString m_clientId;
+    QTimer m_throttleTimer;
+    QList<QPair<QString, QVariantList> > m_throttledRequestQueue;
 };
 
 #endif // VKDATATYPESYNCADAPTOR_H

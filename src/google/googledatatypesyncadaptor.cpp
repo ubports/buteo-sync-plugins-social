@@ -43,7 +43,7 @@
 #include <SignOn/SessionData>
 
 GoogleDataTypeSyncAdaptor::GoogleDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::DataType dataType, QObject *parent)
-    : SocialNetworkSyncAdaptor("google", dataType, parent), m_triedLoading(false)
+    : SocialNetworkSyncAdaptor("google", dataType, 0, parent), m_triedLoading(false)
 {
 }
 

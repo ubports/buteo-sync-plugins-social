@@ -50,7 +50,7 @@
 #include <SignOn/SessionData>
 
 TwitterDataTypeSyncAdaptor::TwitterDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::DataType dataType, QObject *parent)
-    : SocialNetworkSyncAdaptor("twitter", dataType, parent), m_triedLoading(false)
+    : SocialNetworkSyncAdaptor("twitter", dataType, 0, parent), m_triedLoading(false)
 {
 }
 

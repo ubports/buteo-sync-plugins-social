@@ -48,6 +48,7 @@ protected:
     void beginSync(int accountId, const QString &accessToken);
     void finalize(int accountId);
     void finalCleanup();
+    void retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached);
     // implementing TWCSA interface
     bool testAccountProvenance(const QContact &contact, const QString &accountId);
     bool readSyncStateData(QDateTime *remoteSince, const QString &accountId, TwoWayContactSyncAdapter::ReadStateMode readMode = TwoWayContactSyncAdapter::ReadAllState);

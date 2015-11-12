@@ -1,6 +1,8 @@
+*.o
+moc_*
 Makefile
 *.so
 *.ts
 *.qm
-.moc
-.obj
+*.moc
+*.obj
