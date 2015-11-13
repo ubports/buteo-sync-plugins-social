@@ -325,13 +325,14 @@ void VKPostSyncAdaptor::saveVKPostFromObject(int accountId, const QJsonObject &p
     if (!body.isEmpty()) {
         hasValidContent = true;
     }
-    QString posterName, posterIcon;
+    QString posterName, posterIcon, screenName;
     int fromId = newPost.fromId;
     if (newPost.fromId < 0) {
         // it was posted by a group
         const GroupProfile &group(VKDataTypeSyncAdaptor::findGroupProfile(groupProfiles, newPost.fromId));
         posterName = group.name;
         posterIcon = group.icon;
+        screenName = group.screenName;
         fromId = -fromId;
     } else {
         // it was posted by a user
@@ -347,7 +348,13 @@ void VKPostSyncAdaptor::saveVKPostFromObject(int accountId, const QJsonObject &p
                             ? QString::number(post.value(QStringLiteral("id")).toDouble())
                             : QString::number(post.value(QStringLiteral("post_id")).toDouble()));
 
-    newPost.link = QStringLiteral("https://m.vk.com/wall") + identifier;
+    if (newPost.fromId < 0) {
+        // construct group post url
+        newPost.link = QStringLiteral("https://vk.com/%1?w=wall-%2").arg(screenName).arg(identifier);
+    } else {
+        // construct wall post url
+        newPost.link = QStringLiteral("https://m.vk.com/wall") + identifier;
+    }
 
     Q_FOREACH (const QString &line, body.split('\n')) { SOCIALD_LOG_TRACE(line); }
 
