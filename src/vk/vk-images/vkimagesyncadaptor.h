@@ -51,21 +51,18 @@ protected: // implementing VKDataTypeSyncAdaptor interface
     void purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode mode);
     void beginSync(int accountId, const QString &accessToken);
     void finalize(int accountId);
+    void retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached);
 
 private:
     void requestData(int accountId, const QString &accessToken, const QString &continuationUrl,
-                     const QString &vkUserId, const QString &vkAlbumId, bool restarted = false);
-    void possiblyAddNewUser(const QString &vkUserId, int accountId, const QString &accessToken);
+                     const QString &vkUserId, const QString &vkAlbumId);
+    void possiblyAddNewUser(int accountId, const QString &accessToken, const QString &vkUserId);
     void requestQueuedAlbum(const QString &accessToken);
-    bool startThrottleTimerIfRequired(QJsonObject &parsed, int accountId, const QString &accessToken,
-                                      const QString &vkUserId, const QString &vkAlbumId,
-                                      const QString &continuationUrl);
 
 private Q_SLOTS:
     void albumsFinishedHandler();
     void imagesFinishedHandler();
     void userFinishedHandler();
-    void throttleTimerTimeout();
 
 private:
     QList<VKAlbum::ConstPtr> m_receivedAlbums;
@@ -77,7 +74,6 @@ private:
     VKImagesDatabase m_db;
     bool m_syncError;
     int m_currentAlbumIndex;
-    QTimer m_throttleTimer;
 };
 
 #endif // VKIMAGESYNCADAPTOR_H

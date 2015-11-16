@@ -223,6 +223,19 @@ void VKCalendarSyncAdaptor::beginSync(int accountId, const QString &accessToken)
     requestEvents(accountId, accessToken);
 }
 
+void VKCalendarSyncAdaptor::retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached)
+{
+    int accountId = args[0].toInt();
+    if (retryLimitReached) {
+        SOCIALD_LOG_ERROR("hit request retry limit! unable to request data from VK account with id" << accountId);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+    } else {
+        SOCIALD_LOG_DEBUG("retrying Calendars" << request << "request for VK account:" << accountId);
+        requestEvents(accountId, args[1].toString(), args[2].toInt());
+    }
+    decrementSemaphore(accountId); // finished waiting for the request.
+}
+
 void VKCalendarSyncAdaptor::requestEvents(int accountId, const QString &accessToken, int offset)
 {
     QUrlQuery urlQuery;
@@ -252,15 +265,21 @@ void VKCalendarSyncAdaptor::requestEvents(int accountId, const QString &accessTo
         incrementSemaphore(accountId);
         setupReplyTimeout(accountId, reply);
     } else {
-        SOCIALD_LOG_ERROR("unable to request events from VK account with id:" << accountId);
+        // request was throttled by VKNetworkAccessManager
+        QVariantList args;
+        args << accountId << accessToken << offset;
+        enqueueThrottledRequest(QStringLiteral("requestEvents"), args);
+
+        // we are waiting to request data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId); // decremented in retryThrottledRequest().
     }
 }
 
 void VKCalendarSyncAdaptor::finishedHandler()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-    QString accessToken = reply->property("accessToken").toString();
     int accountId = reply->property("accountId").toInt();
+    QString accessToken = reply->property("accessToken").toString();
     int offset = reply->property("offset").toInt();
     QByteArray replyData = reply->readAll();
     bool isError = reply->property("isError").toBool();
@@ -316,6 +335,15 @@ void VKCalendarSyncAdaptor::finishedHandler()
             SOCIALD_LOG_DEBUG("done fetching calendar results");
         }
     } else {
+        QVariantList args;
+        args << accountId << accessToken << offset;
+        if (enqueueServerThrottledRequestIfRequired(parsed, QStringLiteral("requestEvents"), args)) {
+            // we hit the throttle limit, let throttle timer repeat the request
+            // don't decrement semaphore yet as we're still waiting for it.
+            // it will be decremented in retryThrottledRequest().
+            return;
+        }
+
         // error occurred during request.
         SOCIALD_LOG_ERROR("unable to parse calendar data from request with account" << accountId <<
                           "; got:" << QString::fromUtf8(replyData));

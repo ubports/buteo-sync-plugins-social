@@ -32,6 +32,7 @@ protected: // implementing VKDataTypeSyncAdaptor interface
     void beginSync(int accountId, const QString &accessToken);
     void finalize(int accountId);
     void finalCleanup();
+    void retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached);
 
 private:
     void requestEvents(int accountId, const QString &accessToken, int offset = 0);

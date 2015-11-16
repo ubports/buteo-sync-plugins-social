@@ -43,7 +43,7 @@
 #include <SignOn/SessionData>
 
 OneDriveDataTypeSyncAdaptor::OneDriveDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::DataType dataType, QObject *parent)
-    : SocialNetworkSyncAdaptor("onedrive", dataType, parent), m_triedLoading(false)
+    : SocialNetworkSyncAdaptor("onedrive", dataType, 0, parent), m_triedLoading(false)
 {
 }
 

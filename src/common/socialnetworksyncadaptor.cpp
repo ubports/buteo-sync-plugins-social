@@ -63,11 +63,12 @@ namespace {
 
 SocialNetworkSyncAdaptor::SocialNetworkSyncAdaptor(const QString &serviceName,
                                                    SocialNetworkSyncAdaptor::DataType dataType,
+                                                   QNetworkAccessManager *qnam,
                                                    QObject *parent)
     : QObject(parent)
     , m_dataType(dataType)
     , m_accountManager(new Accounts::Manager(this))
-    , m_networkAccessManager(new SocialdNetworkAccessManager(this))
+    , m_networkAccessManager(qnam != 0 ? qnam : new SocialdNetworkAccessManager)
     , m_accountSyncProfile(NULL)
     , m_syncDb(new SocialNetworkSyncDatabase())
     , m_status(SocialNetworkSyncAdaptor::Invalid)
@@ -79,6 +80,7 @@ SocialNetworkSyncAdaptor::SocialNetworkSyncAdaptor(const QString &serviceName,
 
 SocialNetworkSyncAdaptor::~SocialNetworkSyncAdaptor()
 {
+    delete m_networkAccessManager;
     delete m_accountSyncProfile;
     delete m_syncDb;
 }

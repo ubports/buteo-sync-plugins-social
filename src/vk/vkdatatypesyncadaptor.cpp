@@ -6,6 +6,7 @@
  ****************************************************************************/
 
 #include "vkdatatypesyncadaptor.h"
+#include "vknetworkaccessmanager_p.h"
 #include "trace.h"
 
 #include <QtCore/QVariantMap>
@@ -154,12 +155,68 @@ QDateTime VKDataTypeSyncAdaptor::parseVKDateTime(const QJsonValue &v)
 
 
 VKDataTypeSyncAdaptor::VKDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::DataType dataType, QObject *parent)
-    : SocialNetworkSyncAdaptor("vk", dataType, parent), m_triedLoading(false)
+    : SocialNetworkSyncAdaptor("vk", dataType, new VKNetworkAccessManager, parent), m_triedLoading(false)
 {
+    m_throttleTimer.setSingleShot(true);
+    connect(&m_throttleTimer, &QTimer::timeout, this, &VKDataTypeSyncAdaptor::throttleTimerTimeout);
 }
 
 VKDataTypeSyncAdaptor::~VKDataTypeSyncAdaptor()
 {
+}
+
+void VKDataTypeSyncAdaptor::enqueueThrottledRequest(const QString &request, const QVariantList &args, int interval)
+{
+    m_throttledRequestQueue.append(qMakePair(request, args));
+    if (!m_throttleTimer.isActive() || m_throttleTimer.interval() < interval) {
+        // start the timer if it is inactive, or if we are requested to
+        // enqueue a request with a larger interval (e.g., if the server
+        // throttled us, hence we are using VK_THROTTLE_EXTRA_INTERVAL).
+        m_throttleTimer.setInterval(interval ? interval : VK_THROTTLE_INTERVAL);
+        m_throttleTimer.start();
+    }
+}
+
+bool VKDataTypeSyncAdaptor::enqueueServerThrottledRequestIfRequired(const QJsonObject &parsed,
+                                                                    const QString &request,
+                                                                    const QVariantList &args)
+{
+    if (parsed.contains(QLatin1String("error"))) {
+        QJsonObject error = parsed.value(QLatin1String("error")).toObject();
+        int errorCode = error.value(QLatin1String("error_code")).toInt();
+        if (errorCode == VK_THROTTLE_ERROR_CODE) {
+            // we have hit the server rate limit.
+            // wait a few of seconds and try again.
+            SOCIALD_LOG_DEBUG("VK server rate limit exceeded, start throttle timer");
+            enqueueThrottledRequest(request, args, VK_THROTTLE_EXTRA_INTERVAL);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void VKDataTypeSyncAdaptor::throttleTimerTimeout()
+{
+    if (m_throttledRequestQueue.isEmpty()) {
+        return;
+    }
+
+    QPair<QString, QVariantList> request = m_throttledRequestQueue.takeFirst();
+    static int totalRetryCount;
+    totalRetryCount += 1;
+    bool retryLimitReached = totalRetryCount > VK_THROTTLE_RETRY_LIMIT;
+
+    // even if the retry limit has been reached, we still call the derived-type function.
+    // this is because they may have special handling (e.g., cleanup / error conditions).
+    retryThrottledRequest(request.first, request.second, retryLimitReached);
+
+    // we still handle every queued request even if the limit has been reached, as each
+    // request will have a semaphore associated with it which will need to be decremented.
+    if (!m_throttledRequestQueue.isEmpty()) {
+        m_throttleTimer.setInterval(retryLimitReached ? 0 : VK_THROTTLE_INTERVAL);
+        m_throttleTimer.start();
+    }
 }
 
 void VKDataTypeSyncAdaptor::sync(const QString &dataTypeString, int accountId)

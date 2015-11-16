@@ -43,7 +43,7 @@
 #include <SignOn/SessionData>
 
 DropboxDataTypeSyncAdaptor::DropboxDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::DataType dataType, QObject *parent)
-    : SocialNetworkSyncAdaptor("dropbox", dataType, parent), m_triedLoading(false)
+    : SocialNetworkSyncAdaptor("dropbox", dataType, 0, parent), m_triedLoading(false)
 {
 }
 

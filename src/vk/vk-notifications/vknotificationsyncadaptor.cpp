@@ -63,6 +63,19 @@ void VKNotificationSyncAdaptor::finalize(int accountId)
     }
 }
 
+void VKNotificationSyncAdaptor::retryThrottledRequest(const QString &request, const QVariantList &args, bool retryLimitReached)
+{
+    int accountId = args[0].toInt();
+    if (retryLimitReached) {
+        SOCIALD_LOG_ERROR("hit request retry limit! unable to request data from VK account with id" << accountId);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+    } else {
+        SOCIALD_LOG_DEBUG("retrying Notifications" << request << "request for VK account:" << accountId);
+        requestNotifications(accountId, args[1].toString(), args[2].toString(), args[3].toString());
+    }
+    decrementSemaphore(accountId); // finished waiting for the request.
+}
+
 void VKNotificationSyncAdaptor::requestNotifications(int accountId, const QString &accessToken, const QString &until, const QString &pagingToken)
 {
     // TODO: result paging
@@ -90,7 +103,13 @@ void VKNotificationSyncAdaptor::requestNotifications(int accountId, const QStrin
         incrementSemaphore(accountId);
         setupReplyTimeout(accountId, reply);
     } else {
-        SOCIALD_LOG_ERROR("error: unable to request home posts from VK account with id:" << accountId);
+        // request was throttled by VKNetworkAccessManager
+        QVariantList args;
+        args << accountId << accessToken << until << pagingToken;
+        enqueueThrottledRequest(QStringLiteral("requestNotifications"), args);
+
+        // we are waiting to request data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId); // decremented in retryThrottledRequest().
     }
 }
 
