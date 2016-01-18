@@ -45,6 +45,38 @@ static void debugDumpResponse(const QByteArray &data)
     }
 }
 
+static void debugDumpJsonResponse(const QByteArray &data)
+{
+    // 8 is the minimum log level for TRACE logs
+    // as defined in Buteo's LogMacros.h
+    if (Buteo::Logger::instance()->getLogLevel() < 8) {
+        return;
+    }
+
+    // Prettify the json for outputting line-by-line.
+    QString output;
+    QString json = QString::fromUtf8(data);
+    QString leadingSpace = "";
+    for (int i = 0; i < json.size(); ++i) {
+        if (json[i] == '{') {
+            leadingSpace = leadingSpace + "    ";
+            output = output + json[i] + '\n' + leadingSpace;
+        } else if (json[i] == '}') {
+            if (leadingSpace.size() >= 4) {
+                leadingSpace.chop(4);
+            }
+            output = output + '\n' + leadingSpace + json[i];
+        } else if (json[i] == ',') {
+            output = output + json[i] + '\n' + leadingSpace;
+        } else if (json[i] == '\n' || json[i] == '\r') {
+            // ignore newlines/carriage returns
+        } else {
+            output = output + json[i];
+        }
+    }
+    debugDumpResponse(output.toUtf8());
+}
+
 OneDriveBackupSyncAdaptor::OneDriveBackupSyncAdaptor(QObject *parent)
     : OneDriveDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Backup, parent)
     , m_remoteAppDir(QStringLiteral("drive/special/approot"))
@@ -122,17 +154,8 @@ void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessTo
 
     // either upsync or downsync as required.
     if (direction == Buteo::VALUE_TO_REMOTE || direction == Buteo::VALUE_FROM_REMOTE) {
-#if 0
-        // For debugging, it can be useful to perform an initial app folder request before upload/download.
+        // Perform an initial app folder request before upload/download.
         initialiseAppFolderRequest(accountId, accessToken, localPath, remotePath, remoteFile, direction);
-#else
-        // Directly perform either the upload or download
-        if (direction == Buteo::VALUE_TO_REMOTE) {
-            uploadData(accountId, accessToken, localPath, remotePath);
-        } else if (direction == Buteo::VALUE_FROM_REMOTE) {
-            requestData(accountId, accessToken, localPath, remotePath, remoteFile);
-        }
-#endif
     } else {
         SOCIALD_LOG_ERROR("No direction set for OneDrive Backup sync with account:" << accountId);
         setStatus(SocialNetworkSyncAdaptor::Error);
@@ -142,6 +165,9 @@ void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessTo
 
 void OneDriveBackupSyncAdaptor::initialiseAppFolderRequest(int accountId, const QString &accessToken, const QString &localPath, const QString &remotePath, const QString &remoteFile, const QString &syncDirection)
 {
+    // initialise the app folder and get the remote id of the drive/special/approot path.
+    // e.g., let's say we have a final path like: drive/special/approot/Backups/ABCDEFG/backup.tar
+    // this request will get us the id of the drive/special/approot bit.
     QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/drive/special/approot"));
 
     QNetworkRequest req(url);
@@ -182,20 +208,168 @@ void OneDriveBackupSyncAdaptor::initialiseAppFolderFinishedHandler()
     bool isError = reply->property("isError").toBool();
     reply->deleteLater();
     removeReplyTimeout(accountId, reply);
+    bool ok = false;
+    QJsonObject parsed = parseJsonObjectReplyData(data, &ok);
 
-    if (isError) {
+    if (isError || !ok) {
         SOCIALD_LOG_ERROR("error occurred when performing initialiseAppFolder request with OneDrive account:" << accountId);
-        debugDumpResponse(data);
+        debugDumpJsonResponse(data);
         setStatus(SocialNetworkSyncAdaptor::Error);
     } else {
         SOCIALD_LOG_DEBUG("initialiseAppFolder request succeeded with OneDrive account:" << accountId);
-        debugDumpResponse(data);
+        SOCIALD_LOG_DEBUG("app folder has remote ID:" << parsed.value("id").toString());
+
+        // Initialize our list of remote directories to create
         if (syncDirection == Buteo::VALUE_TO_REMOTE) {
+            QString remoteParentPath = m_remoteAppDir;
+            Q_FOREACH (const QString &dir, remotePath.split('/', QString::SkipEmptyParts)) {
+                OneDriveBackupSyncAdaptor::RemoteDirectory remoteDir;
+                remoteDir.dirName = dir;
+                remoteDir.remoteId = QString();
+                remoteDir.parentPath = remoteParentPath;
+                remoteDir.parentId = QString();
+                remoteDir.created = false;
+                m_remoteDirectories.append(remoteDir);
+                remoteParentPath = QStringLiteral("%1/%2").arg(remoteParentPath).arg(dir);
+            }
+
+            // Read out the app folder remote ID from the response and set it as the parent ID of the first remote dir.
+            m_remoteDirectories[0].parentId = parsed.value("id").toString();
+            SOCIALD_LOG_DEBUG("Set the parentId of the first subfolder:" << m_remoteDirectories[0].dirName << "to:" << m_remoteDirectories[0].parentId);
+
+            // and begin creating the remote directory structure as required, prior to uploading the files.
+            // We will create the first (intermediate) remote directory
+            // e.g. if final path is: drive/special/approot/Backups/ABCDEFG/backup.tar
+            // then the first intermediate remote directory is "Backups"
+            // Once that is complete, we will request the folder metadata for drive/special/approot
+            // and from that, parse the children array to get the remote ID of the "Backups" dir.
+            // Then, we can create the next intermediate remote directory "ABCDEFG" etc.
             uploadData(accountId, accessToken, localPath, remotePath);
         } else if (syncDirection == Buteo::VALUE_FROM_REMOTE) {
+            // download the required data.
             requestData(accountId, accessToken, localPath, remotePath, remoteFile);
         } else {
-            SOCIALD_LOG_ERROR("invalid syncDirection specified to initialiseAppFolder request with OneDrive account:" << accountId);
+            SOCIALD_LOG_ERROR("invalid syncDirection specified to initialiseAppFolder request with OneDrive account:" << accountId << ":" << syncDirection);
+            setStatus(SocialNetworkSyncAdaptor::Error);
+        }
+    }
+
+    decrementSemaphore(accountId);
+}
+
+
+void OneDriveBackupSyncAdaptor::getRemoteFolderMetadata(int accountId, const QString &accessToken, const QString &localPath, const QString &remotePath, const QString &parentId, const QString &remoteDirName)
+{
+    // we request the parent folder metadata
+    // e.g., let's say we have a final path like: drive/special/approot/Backups/ABCDEFG/backup.tar
+    // this request will, when first called, be passed the remote id of the drive/special/approot bit
+    // so we request the metadata for that (expanding children)
+    QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/drive/items/%1").arg(parentId));
+    QUrlQuery query(url);
+    QList<QPair<QString, QString> > queryItems;
+    queryItems.append(QPair<QString, QString>(QStringLiteral("expand"), QStringLiteral("children")));
+    query.setQueryItems(queryItems);
+    url.setQuery(query);
+
+    QNetworkRequest req(url);
+    req.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
+                     QString(QLatin1String("Bearer ")).toUtf8() + accessToken.toUtf8());
+
+    QNetworkReply *reply = m_networkAccessManager->get(req);
+
+    if (reply) {
+        reply->setProperty("accountId", accountId);
+        reply->setProperty("accessToken", accessToken);
+        reply->setProperty("localPath", localPath);
+        reply->setProperty("remotePath", remotePath);
+        reply->setProperty("parentId", parentId); // the id of the parent folder containing the remote folder we're interested in
+        reply->setProperty("remoteDirName", remoteDirName); // the name of the remote folder we're interested in
+        connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(errorHandler(QNetworkReply::NetworkError)));
+        connect(reply, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(sslErrorsHandler(QList<QSslError>)));
+        connect(reply, SIGNAL(finished()), this, SLOT(getRemoteFolderMetadataFinishedHandler()));
+
+        // we're requesting data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId);
+        setupReplyTimeout(accountId, reply, 10 * 60 * 1000); // 10 minutes
+    } else {
+        SOCIALD_LOG_ERROR("unable to perform remote folder metadata request for OneDrive account with id" << accountId);
+    }
+}
+
+void OneDriveBackupSyncAdaptor::getRemoteFolderMetadataFinishedHandler()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray data = reply->readAll();
+    int accountId = reply->property("accountId").toInt();
+    QString accessToken = reply->property("accessToken").toString();
+    QString localPath = reply->property("localPath").toString();
+    QString remotePath = reply->property("remotePath").toString();
+    QString parentId = reply->property("parentId").toString();
+    QString remoteDirName = reply->property("remoteDirName").toString();
+    bool isError = reply->property("isError").toBool();
+    reply->deleteLater();
+    removeReplyTimeout(accountId, reply);
+    bool ok = false;
+    QJsonObject parsed = parseJsonObjectReplyData(data, &ok);
+
+    if (isError || !ok) {
+        SOCIALD_LOG_ERROR("error occurred when performing remote folder metadata request with OneDrive account:" << accountId);
+        debugDumpJsonResponse(data);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+    } else {
+        SOCIALD_LOG_DEBUG("remote folder metadata request succeeded with OneDrive account:" << accountId);
+        SOCIALD_LOG_DEBUG("remote folder:" << parsed.value("name").toString() << "has remote ID:" << parsed.value("id").toString());
+        debugDumpJsonResponse(data);
+        if (!parsed.contains("children")) {
+            SOCIALD_LOG_ERROR("folder metadata request result had no children!");
+            setStatus(SocialNetworkSyncAdaptor::Error);
+            decrementSemaphore(accountId);
+            return;
+        }
+
+        // parse the response, and find the child folder which we're interested in.
+        // once we've found it, store the remote id associated with that child folder in our folder metadata list.
+        // then, trigger creation of the next child subfolder, now we know the id of that subfolder's parent folder.
+        bool foundChildFolder = false;
+        QJsonArray children = parsed.value("children").toArray();
+        Q_FOREACH (const QJsonValue &child, children) {
+            const QJsonObject childObject = child.toObject();
+            const QString childName = childObject.value("name").toString();
+            const QString childId = childObject.value("id").toString();
+            const bool isDir = childObject.keys().contains("folder");
+            SOCIALD_LOG_DEBUG("Looking for:" << remoteDirName << ", checking child object:" << childName << "with id:" << childId << ", isDir?" << isDir);
+            if (isDir && childName.compare(remoteDirName, Qt::CaseInsensitive) == 0) {
+                SOCIALD_LOG_DEBUG("found folder:" << childName << "with remote id:" << childId << "for OneDrive account:" << accountId);
+                foundChildFolder = true;
+                bool updatedMetadata = false;
+                for (int i = 0; i < m_remoteDirectories.size(); i++) {
+                    if (m_remoteDirectories[i].parentId == parentId && m_remoteDirectories[i].dirName.compare(remoteDirName, Qt::CaseInsensitive) == 0) {
+                        // found the directory whose metadata we should update
+                        m_remoteDirectories[i].remoteId = childId;
+                        m_remoteDirectories[i].dirName = childName;
+                        if ((i+1) < (m_remoteDirectories.size())) {
+                            // also, this directory will be the parent of the next directory
+                            // so set the parentId of the next directory to be this directory's id.
+                            m_remoteDirectories[i+1].parentId = childId;
+                        }
+                        updatedMetadata = true;
+                        break;
+                    }
+                }
+                if (!updatedMetadata) {
+                    SOCIALD_LOG_ERROR("could not find remote dir in directory metadata:" << remoteDirName);
+                    setStatus(SocialNetworkSyncAdaptor::Error);
+                    decrementSemaphore(accountId);
+                    return;
+                }
+
+                // we now know the remote id of this folder, so we can trigger creation of the next subfolder.
+                uploadData(accountId, accessToken, localPath, remotePath);
+                break;
+            }
+        }
+        if (!foundChildFolder) {
+            SOCIALD_LOG_ERROR("could not find remote dir in folder metadata response:" << remoteDirName);
             setStatus(SocialNetworkSyncAdaptor::Error);
         }
     }
@@ -276,7 +450,7 @@ void OneDriveBackupSyncAdaptor::remotePathFinishedHandler()
     removeReplyTimeout(accountId, reply);
     if (isError) {
         SOCIALD_LOG_ERROR("error occurred when performing Backup remote path request for OneDrive account" << accountId << ":");
-        debugDumpResponse(data);
+        debugDumpJsonResponse(data);
         setStatus(SocialNetworkSyncAdaptor::Error);
         decrementSemaphore(accountId);
         return;
@@ -286,7 +460,7 @@ void OneDriveBackupSyncAdaptor::remotePathFinishedHandler()
     QJsonObject parsed = parseJsonObjectReplyData(data, &ok);
     if (!ok || !parsed.contains("children")) {
         SOCIALD_LOG_ERROR("no backup data exists in reply from OneDrive with account" << accountId << ", got:");
-        debugDumpResponse(data);
+        debugDumpJsonResponse(data);
         setStatus(SocialNetworkSyncAdaptor::Error);
         decrementSemaphore(accountId);
         return;
@@ -321,7 +495,7 @@ void OneDriveBackupSyncAdaptor::remoteFileFinishedHandler()
     removeReplyTimeout(accountId, reply);
     if (isError) {
         SOCIALD_LOG_ERROR("error occurred when performing Backup remote file request for OneDrive account" << accountId << ", got:");
-        debugDumpResponse(data);
+        debugDumpJsonResponse(data);
         setStatus(SocialNetworkSyncAdaptor::Error);
         decrementSemaphore(accountId);
         return;
@@ -336,7 +510,7 @@ void OneDriveBackupSyncAdaptor::remoteFileFinishedHandler()
         QJsonObject parsed = parseJsonObjectReplyData(data, &ok);
         if (!ok || !parsed.contains("@content.downloadUrl")) {
             SOCIALD_LOG_ERROR("no content redirect url exists in file metadata for file:" << remoteFile);
-            debugDumpResponse(data);
+            debugDumpJsonResponse(data);
             setStatus(SocialNetworkSyncAdaptor::Error);
             decrementSemaphore(accountId);
             return;
@@ -366,23 +540,46 @@ void OneDriveBackupSyncAdaptor::uploadData(int accountId, const QString &accessT
     // step two: upload every single file from the local path to the remote path.
 
     QNetworkReply *reply = 0;
+    QString intermediatePath;
     if (localFile.isEmpty()) {
         // attempt to create the remote path directory.
+        QString remoteDir;
+        QString remoteParentId;
+        QString remoteParentPath;
+        for (int i = 0; i < m_remoteDirectories.size(); ++i) {
+            if (m_remoteDirectories[i].created == false) {
+                m_remoteDirectories[i].created = true; // we're creating this intermediate dir this time.
+                remoteDir = m_remoteDirectories[i].dirName;
+                remoteParentId = m_remoteDirectories[i].parentId;
+                remoteParentPath = m_remoteDirectories[i].parentPath;
+                break;
+            }
+        }
+        if (remoteDir.isEmpty()) {
+            SOCIALD_LOG_ERROR("No remote directory to create, but no file specified for upload - aborting");
+            return;
+        }
+        if (remoteParentId.isEmpty()) {
+            SOCIALD_LOG_ERROR("No remote parent id known for directory:" << remoteDir << "- aborting");
+            return;
+        }
+
         QString createFolderJson = QStringLiteral(
             "{"
                 "\"name\": \"%1\","
                 "\"folder\": { }"
-            "}").arg(remotePath);
+            "}").arg(remoteDir);
         QByteArray data = createFolderJson.toUtf8();
 
-        QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/%1/children").arg(m_remoteAppDir));
+        QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/drive/items/%1/children").arg(remoteParentId));
+        intermediatePath = QStringLiteral("%1/%2").arg(remoteParentPath).arg(remoteDir);
         QNetworkRequest request(url);
         request.setHeader(QNetworkRequest::ContentLengthHeader, data.size());
         request.setHeader(QNetworkRequest::ContentTypeHeader,
                           QVariant::fromValue<QString>(QString::fromLatin1("application/json")));
         request.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
                              QString(QLatin1String("Bearer ")).toUtf8() + accessToken.toUtf8());
-        SOCIALD_LOG_DEBUG("Attempting to create the remote directory:" << remotePath << "via request:" << url.toString());
+        SOCIALD_LOG_DEBUG("Attempting to create the remote directory:" << intermediatePath << "via request:" << url.toString());
         SOCIALD_LOG_DEBUG("with data:" << createFolderJson);
 
         reply = m_networkAccessManager->post(request, data);
@@ -411,6 +608,7 @@ void OneDriveBackupSyncAdaptor::uploadData(int accountId, const QString &accessT
         reply->setProperty("accessToken", accessToken);
         reply->setProperty("localPath", localPath);
         reply->setProperty("remotePath", remotePath);
+        reply->setProperty("intermediatePath", intermediatePath);
         reply->setProperty("localFile", localFile);
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(sslErrorsHandler(QList<QSslError>)));
@@ -438,21 +636,44 @@ void OneDriveBackupSyncAdaptor::createRemotePathFinishedHandler()
     QString accessToken = reply->property("accessToken").toString();
     QString localPath = reply->property("localPath").toString();
     QString remotePath = reply->property("remotePath").toString();
+    QString intermediatePath = reply->property("intermediatePath").toString();
     bool isError = reply->property("isError").toBool();
     int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     reply->deleteLater();
     removeReplyTimeout(accountId, reply);
     if (isError) {
-        // we actually expect a conflict error if the folder already existed, which is fine.
-        if (httpCode != 409) {
+        if (httpCode == 409) {
+            // we actually expect a conflict error if the folder already existed, which is fine.
+            SOCIALD_LOG_DEBUG("remote path creation had conflict: already exists:" << intermediatePath << ".  Continuing.");
+        } else {
             // this must be a real error.
             SOCIALD_LOG_ERROR("remote path creation failed:" << httpCode);
-            debugDumpResponse(data);
+            debugDumpJsonResponse(data);
             setStatus(SocialNetworkSyncAdaptor::Error);
             decrementSemaphore(accountId);
             return;
+        }
+    }
+
+    // Check to see if we need to create any more intermediate directories
+    QString createdDirectoryParentFolderId;
+    QString createdDirectoryName;
+    for (int i = 0; i < m_remoteDirectories.size(); ++i) {
+        if (m_remoteDirectories[i].created) {
+            // the last one of these will be the one for which this response was received.
+            createdDirectoryParentFolderId = m_remoteDirectories[i].parentId;
+            createdDirectoryName = m_remoteDirectories[i].dirName;
         } else {
-            SOCIALD_LOG_DEBUG("remote path creation had conflict: already exists:" << remotePath << ".  Continuing.");
+            SOCIALD_LOG_DEBUG("successfully created folder:" << createdDirectoryName << ", now performing parent request to get its remote id");
+            SOCIALD_LOG_DEBUG("need to create another remote directory:" << m_remoteDirectories[i].dirName << "with parent:" << m_remoteDirectories[i].parentPath);
+            // first, get the metadata for the most recently created path's parent, to get its remote ID.
+            // after that's done, the next intermediate directory can be created.
+            // NOTE: we do this (rather than attempting to parse the folder id from the response in this function)
+            // because in the case where the remote path creation failed due to conflict, the response doesn't
+            // contain the remote id.  So, better to have uniform code to handle all cases.
+            getRemoteFolderMetadata(accountId, accessToken, localPath, remotePath, createdDirectoryParentFolderId, createdDirectoryName);
+            decrementSemaphore(accountId);
+            return;
         }
     }
 
@@ -464,7 +685,6 @@ void OneDriveBackupSyncAdaptor::createRemotePathFinishedHandler()
         SOCIALD_LOG_DEBUG("uploading file:" << localFile << "from" << localPath << "to:" << remotePath);
         uploadData(accountId, accessToken, localPath, remotePath, localFile);
     }
-
     decrementSemaphore(accountId);
 }
 
@@ -483,7 +703,7 @@ void OneDriveBackupSyncAdaptor::createRemoteFileFinishedHandler()
     if (isError) {
         SOCIALD_LOG_ERROR("failed to backup file:" << localPath << localFile << "to:" << remotePath <<
                           "for OneDrive account:" << accountId << ", code:" << httpCode);
-        debugDumpResponse(data);
+        debugDumpJsonResponse(data);
         setStatus(SocialNetworkSyncAdaptor::Error);
         decrementSemaphore(accountId);
         return;
