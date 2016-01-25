@@ -30,6 +30,7 @@
 #include <QtCore/QVariantMap>
 #include <QtCore/QList>
 #include <QtCore/QStringList>
+#include <QtCore/QSet>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QSslError>
 #include <QtSql/QSqlDatabase>
@@ -55,6 +56,10 @@ private:
     void initialiseAppFolderRequest(int accountId, const QString &accessToken,
                                     const QString &localPath, const QString &remotePath,
                                     const QString &remoteFile, const QString &syncDirection);
+    void getRemoteFolderMetadata(int accountId, const QString &accessToken,
+                                 const QString &localPath, const QString &remotePath,
+                                 const QString &parentId, const QString &remoteDirName);
+
     void requestData(int accountId, const QString &accessToken,
                      const QString &localPath, const QString &remotePath,
                      const QString &remoteFile = QString(), const QString &redirectUrl = QString());
@@ -65,6 +70,7 @@ private:
 
 private Q_SLOTS:
     void initialiseAppFolderFinishedHandler();
+    void getRemoteFolderMetadataFinishedHandler();
     void remotePathFinishedHandler();
     void remoteFileFinishedHandler();
     void createRemotePathFinishedHandler();
@@ -74,6 +80,15 @@ private Q_SLOTS:
 
 private:
     QString m_remoteAppDir;
+
+    struct RemoteDirectory {
+        QString dirName;
+        QString remoteId;
+        QString parentPath;
+        QString parentId;
+        bool created;
+    };
+    QList<RemoteDirectory> m_remoteDirectories;
 };
 
 #endif // ONEDRIVEBACKUPSYNCADAPTOR_H
