@@ -397,7 +397,21 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
 
     // now store the changes locally
     SOCIALD_LOG_TRACE("storing remote changes locally for account" << accountId);
-    if (!storeRemoteChanges(m_remoteDels[accountId], &m_remoteAddMods[accountId], QString::number(accountId))) {
+    // Note: we may still sync these ignorable details+fields, just don't look at them during delta detection.
+    // We need to do this, otherwise there can be loops caused due to spurious differences between the
+    // in-memory version (QContact) and the exportable version (vCard) resulting in ETag updates server-side.
+    // The downside is that changes to these details will not be synced unless another change also occurs.
+    QSet<QContactDetail::DetailType> ignorableDetailTypes = getDefaultIgnorableDetailTypes();
+    ignorableDetailTypes.insert(QContactDetail::TypeGender);   // ignore differences in X-GENDER field when detecting delta.
+    ignorableDetailTypes.insert(QContactDetail::TypeFavorite); // ignore differences in X-FAVORITE field when detecting delta.
+    ignorableDetailTypes.insert(QContactDetail::TypeAvatar);   // ignore differences in PHOTO field when detecting delta.
+    QHash<QContactDetail::DetailType, QSet<int> > ignorableDetailFields = getDefaultIgnorableDetailFields();
+    ignorableDetailFields[QContactDetail::TypeAddress] << QContactAddress::FieldSubTypes          // and ADR subtypes
+                                                       << QContactAddress::FieldContext;          // and ADR contexts
+    ignorableDetailFields[QContactDetail::TypePhoneNumber] << QContactPhoneNumber::FieldSubTypes  // and TEL number subtypes
+                                                           << QContactPhoneNumber::FieldContext;  // and TEL number contexts
+    ignorableDetailFields[QContactDetail::TypeUrl] << QContactUrl::FieldSubType;                  // and URL subtype
+    if (!storeRemoteChanges(m_remoteDels[accountId], &m_remoteAddMods[accountId], QString::number(accountId), true, ignorableDetailTypes, ignorableDetailFields)) {
         SOCIALD_LOG_ERROR("unable to store remote changes locally - aborting sync Google contacts for account" << accountId);
         purgeSyncStateData(QString::number(accountId));
         setStatus(SocialNetworkSyncAdaptor::Error);
@@ -417,20 +431,7 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
     }
 
     // now determine which local changes need to be upsynced to the remote server, ignoring some changes.
-    // Note: we may still upsync these ignorable details+fields, just don't look at them during delta detection.
-    // We need to do this, otherwise there can be loops caused due to spurious differences between the
-    // in-memory version (QContact) and the exportable version (vCard) resulting in ETag updates server-side.
-    // The downside is that changes to these details will not be upsynced unless another change also occurs.
-    QSet<QContactDetail::DetailType> ignorableDetailTypes = getDefaultIgnorableDetailTypes();
-    ignorableDetailTypes.insert(QContactDetail::TypeGender);   // ignore differences in X-GENDER field when detecting delta.
-    ignorableDetailTypes.insert(QContactDetail::TypeFavorite); // ignore differences in X-FAVORITE field when detecting delta.
-    ignorableDetailTypes.insert(QContactDetail::TypeAvatar);   // ignore differences in PHOTO field when detecting delta.
-    QHash<QContactDetail::DetailType, QSet<int> > ignorableDetailFields = getDefaultIgnorableDetailFields();
-    ignorableDetailFields[QContactDetail::TypeAddress] << QContactAddress::FieldSubTypes;         // and ADR subtypes
-    ignorableDetailFields[QContactDetail::TypePhoneNumber] << QContactPhoneNumber::FieldSubTypes  // and TEL number subtypes
-                                                           << QContactPhoneNumber::FieldContext;  // and TEL number contexts
-    ignorableDetailFields[QContactDetail::TypeUrl] << QContactUrl::FieldSubType;                  // and URL subtype
-    // fetch the local changes which occurred since last sync
+    // fetch the local changes which occurred since last sync.
     QDateTime localSince;
     QList<QContact> locallyAdded, locallyModified, locallyDeleted;
     if (!determineLocalChanges(&localSince, &locallyAdded, &locallyModified, &locallyDeleted, QString::number(accountId), ignorableDetailTypes, ignorableDetailFields)) {

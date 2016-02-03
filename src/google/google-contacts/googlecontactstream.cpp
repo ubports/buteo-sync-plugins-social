@@ -585,7 +585,9 @@ QContactDetail GoogleContactStream::handleEntryPhoneNumber()
     QString rel = mXmlReader->attributes().hasAttribute("rel")
                 ? mXmlReader->attributes().value("rel").toString()
                 : QString();
+    QString number = mXmlReader->readElementText();
 
+    SOCIALD_LOG_DEBUG("received phone type information from Google:" << rel << "for number:" << number);
     if (rel == QStringLiteral("http://schemas.google.com/g/2005#home")) {
         phone.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeLandline);
         phone.setContexts(QContactDetail::ContextHome);
@@ -621,9 +623,11 @@ QContactDetail GoogleContactStream::handleEntryPhoneNumber()
         phone.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeBulletinBoardSystem);
     } else if (rel == QStringLiteral("http://schemas.google.com/g/2005#assistant")) {
         phone.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeAssistant);
-    } // else ignore it, malformed output from Google.
+    } else if (!rel.isEmpty()) {
+        SOCIALD_LOG_INFO("unhandled phone type information from Google:" << rel << "for number:" << number);
+    }
 
-    phone.setNumber(mXmlReader->readElementText());
+    phone.setNumber(number);
     return phone;
 }
 
@@ -632,6 +636,10 @@ QContactDetail GoogleContactStream::handleEntryStructuredPostalAddress()
     Q_ASSERT(mXmlReader->isStartElement() && mXmlReader->qualifiedName() == "gd:structuredPostalAddress");
 
     QContactAddress address;
+
+    QString rel = mXmlReader->attributes().hasAttribute("rel")
+                ? mXmlReader->attributes().value("rel").toString()
+                : QString();
 
     while (!(mXmlReader->tokenType() == QXmlStreamReader::EndElement && mXmlReader->qualifiedName() == "gd:structuredPostalAddress")) {
         if (mXmlReader->tokenType() == QXmlStreamReader::StartElement) {
@@ -652,6 +660,19 @@ QContactDetail GoogleContactStream::handleEntryStructuredPostalAddress()
             }
         }
         mXmlReader->readNextStartElement();
+    }
+
+    if (!rel.isEmpty()) {
+        SOCIALD_LOG_DEBUG("received address type information from Google:" << rel << "for address:" << address.street());
+        if (rel == QStringLiteral("http://schemas.google.com/g/2005#home")) {
+            address.setContexts(QContactDetail::ContextHome);
+        } else if (rel == QStringLiteral("http://schemas.google.com/g/2005#work")) {
+            address.setContexts(QContactDetail::ContextWork);
+        } else if (rel == QStringLiteral("http://schemas.google.com/g/2005#other")) {
+            address.setContexts(QContactDetail::ContextOther);
+        } else {
+            SOCIALD_LOG_INFO("unhandled address type information from Google:" << rel << "for address:" << address.street());
+        }
     }
 
     return address;
@@ -950,9 +971,17 @@ void GoogleContactStream::encodeEmailAddress(const QContactEmailAddress &emailAd
 void GoogleContactStream::encodeAddress(const QContactAddress &address)
 {
     mXmlWriter->writeStartElement("gd:structuredPostalAddress");
+
+    if (address.contexts().contains(QContactDetail::ContextHome)) {
+        mXmlWriter->writeAttribute("rel", "http://schemas.google.com/g/2005#home");
+    } else if (address.contexts().contains(QContactDetail::ContextWork)) {
+        mXmlWriter->writeAttribute("rel", "http://schemas.google.com/g/2005#work");
+    } else {
+        mXmlWriter->writeAttribute("rel", "http://schemas.google.com/g/2005#other");
+    }
+
     // https://developers.google.com/google-apps/contacts/v3/reference#structuredPostalAddressRestrictions
     // we cannot use mailClass attribute (for postal/parcel etc)
-    mXmlWriter->writeAttribute("rel", "http://schemas.google.com/g/2005#other");
     if (!address.street().isEmpty())
         mXmlWriter->writeTextElement("gd:street", address.street());
     if (!address.locality().isEmpty())
@@ -965,6 +994,7 @@ void GoogleContactStream::encodeAddress(const QContactAddress &address)
         mXmlWriter->writeTextElement("gd:postcode", address.postcode());
     if (!address.country().isEmpty())
         mXmlWriter->writeTextElement("gd:country", address.country());
+
     mXmlWriter->writeEndElement();
 }
 
