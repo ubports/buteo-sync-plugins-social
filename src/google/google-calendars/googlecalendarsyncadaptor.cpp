@@ -466,7 +466,7 @@ void extractStartAndEnd(const QJsonObject &eventData,
             *start = parsedStartTime.toLocalZone();
         } else {
             *start = KDateTime(QDate::fromString(startTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
-            // note: don't call start->setDateOnly(true); or mkcal doesn't like it.
+            start->setDateOnly(true);
         }
     }
 
@@ -501,13 +501,13 @@ void extractStartAndEnd(const QJsonObject &eventData,
                     // multi-day all-day event.
                     // as noted above, Google will send all-day events as having an end-date
                     // of real-end-date+1 in order to conform to iCal spec (exclusive end dt).
-                    *start = KDateTime(QDate::fromString(startTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
-                    *end = KDateTime(QDate::fromString(endTimeString, QDATEONLY_FORMAT).addDays(-1), QTime(), KDateTime::ClockTime);
+                    *end = KDateTime(QDate::fromString(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
+                    end->setDateOnly(true);
                     *isAllDay = true;
                 }
             } else {
-                *end = KDateTime(QDate::fromString(endTimeString, QDATEONLY_FORMAT).addDays(-1), QTime(), KDateTime::ClockTime);
-                // note: don't call end->setDateOnly(true); or mkcal doesn't like it.
+                *end = KDateTime(QDate::fromString(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
+                end->setDateOnly(true);
                 *isAllDay = false;
             }
         }
