@@ -145,8 +145,8 @@ KDateTime datetimeFromUpdateStr(const QString &update)
     // date format directly.
     bool tzIncluded = update.endsWith('Z');
     QDateTime qdt = tzIncluded
-                  ? QDateTime::fromString(update, RFC3339_QDATE_FORMAT_MS)
-                  : QDateTime::fromString(update, RFC3339_QDATE_FORMAT_MS_NTZC);
+                  ? QLocale::c().toDateTime(update, RFC3339_QDATE_FORMAT_MS)
+                  : QLocale::c().toDateTime(update, RFC3339_QDATE_FORMAT_MS_NTZC);
     if (tzIncluded) {
         qdt.setTimeSpec(Qt::UTC);
     }
@@ -198,7 +198,7 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
             str.remove(0, 5);
             QStringList dts = str.split(',');
             Q_FOREACH(const QString &dstr, dts) {
-                QDate date = QDate::fromString(dstr, RFC5545_QDATE_FORMAT);
+                QDate date = QLocale::c().toDate(dstr, RFC5545_QDATE_FORMAT);
                 KDateTime kdt(date, KDateTime::Spec::ClockTime());
                 retn.append(kdt);
             }
@@ -296,7 +296,7 @@ QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &ica
     // RDATE (date)
     QString rdates;
     Q_FOREACH (const QDate &rdate, kcalRecurrence->rDates()) {
-        rdates.append(rdate.toString(RFC5545_QDATE_FORMAT));
+        rdates.append(QLocale::c().toString(rdate, RFC5545_QDATE_FORMAT));
         rdates.append(',');
     }
     if (rdates.size()) {
@@ -322,7 +322,7 @@ QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &ica
     // EXDATE (date)
     QString exdates;
     Q_FOREACH (const QDate &exdate, kcalRecurrence->exDates()) {
-        exdates.append(exdate.toString(RFC5545_QDATE_FORMAT));
+        exdates.append(QLocale::c().toString(exdate, RFC5545_QDATE_FORMAT));
         exdates.append(',');
     }
     if (exdates.size()) {
@@ -367,14 +367,14 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     // insert the date/time and timeZone information into the Json object.
     // note that timeZone is required for recurring events, for some reason.
     if (event->dtStart().isDateOnly() || (event->allDay() && event->dtStart().time() == QTime(0,0,0))) {
-        start.insert(QLatin1String("date"), event->dtStart().date().toString(QDATEONLY_FORMAT));
+        start.insert(QLatin1String("date"), QLocale::c().toString(event->dtStart().date(), QDATEONLY_FORMAT));
     } else {
         start.insert(QLatin1String("dateTime"), event->dtStart().toString(RFC3339_FORMAT));
         start.insert(QLatin1String("timeZone"), QJsonValue(event->dtStart().toString(KLONGTZ_FORMAT)));
     }
     if (event->dtEnd().isDateOnly() || (event->allDay() && event->dtEnd().time() == QTime(0,0,0))) {
         // note: for iCal spec, allDay events need to have an end date of real-end-date+1 as end date is exclusive.
-        end.insert(QLatin1String("date"), event->dateEnd().addDays(1).toString(QDATEONLY_FORMAT));
+        end.insert(QLatin1String("date"), QLocale::c().toString(event->dateEnd().addDays(1), QDATEONLY_FORMAT));
     } else {
         end.insert(QLatin1String("dateTime"), event->dtEnd().toString(RFC3339_FORMAT));
         end.insert(QLatin1String("timeZone"), QJsonValue(event->dtEnd().toString(KLONGTZ_FORMAT)));
@@ -465,7 +465,7 @@ void extractStartAndEnd(const QJsonObject &eventData,
 
             *start = parsedStartTime.toLocalZone();
         } else {
-            *start = KDateTime(QDate::fromString(startTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
+            *start = KDateTime(QLocale::c().toDate(startTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
             start->setDateOnly(true);
         }
     }
@@ -485,13 +485,13 @@ void extractStartAndEnd(const QJsonObject &eventData,
         } else {
             // Special handling for all-day events is required.
             if (*startExists && *startIsDateOnly) {
-                if (QDate::fromString(startTimeString, QDATEONLY_FORMAT)
-                        == QDate::fromString(endTimeString, QDATEONLY_FORMAT)) {
+                if (QLocale::c().toDate(startTimeString, QDATEONLY_FORMAT)
+                        == QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT)) {
                     // single-day all-day event
                     *endExists = false;
                     *isAllDay = true;
-                } else if (QDate::fromString(startTimeString, QDATEONLY_FORMAT)
-                        == QDate::fromString(endTimeString, QDATEONLY_FORMAT).addDays(-1)) {
+                } else if (QLocale::c().toDate(startTimeString, QDATEONLY_FORMAT)
+                        == QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT).addDays(-1)) {
                     // Google will send a single-day all-day event has having an end-date
                     // of startDate+1 to conform to iCal spec.  Hence, this is actually
                     // a single-day all-day event, despite the difference in end-date.
@@ -501,12 +501,12 @@ void extractStartAndEnd(const QJsonObject &eventData,
                     // multi-day all-day event.
                     // as noted above, Google will send all-day events as having an end-date
                     // of real-end-date+1 in order to conform to iCal spec (exclusive end dt).
-                    *end = KDateTime(QDate::fromString(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
+                    *end = KDateTime(QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
                     end->setDateOnly(true);
                     *isAllDay = true;
                 }
             } else {
-                *end = KDateTime(QDate::fromString(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
+                *end = KDateTime(QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
                 end->setDateOnly(true);
                 *isAllDay = false;
             }
