@@ -662,7 +662,7 @@ QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int 
         if (!obj.value("bdate").toString().isEmpty() && obj.value("bdate").toString().length() > 5) {
             // DD.MM.YYYY form, we ignore DD.MM (yearless) form response.
             QContactBirthday birthday;
-            birthday.setDateTime(QDateTime::fromString(obj.value("bdate").toString(), "dd.MM.yyyy"));
+            birthday.setDateTime(QLocale::c().toDateTime(obj.value("bdate").toString(), "dd.MM.yyyy"));
             saveNonexportableDetail(c, birthday);
         }
 

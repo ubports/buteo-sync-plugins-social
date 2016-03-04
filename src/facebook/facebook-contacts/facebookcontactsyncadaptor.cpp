@@ -371,7 +371,7 @@ QContact FacebookContactSyncAdaptor::parseContactDetails(const QJsonObject &blob
         if (!birthday.isValid()) {
             // manually parse the birthday.  It's usually in MM/DD/YYYY format,
             // but sometimes MM/DD format - which we ignore.
-            birthday = QDateTime::fromString(birthdayStr, "MM/dd/yyyy");
+            birthday = QLocale::c().toDateTime(birthdayStr, "MM/dd/yyyy");
         }
         QString bio = blobDetails.value(QLatin1String("bio")).toString();
         QString gender = blobDetails.value(QLatin1String("gender")).toString();

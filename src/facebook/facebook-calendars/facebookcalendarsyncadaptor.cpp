@@ -367,8 +367,8 @@ void FacebookCalendarSyncAdaptor::finishedHandler()
                     // if a date-only event lasts only one day, set isAllDay to true, but don't set an end date.
                     // if a date-only event lasts multiple days, set isAllDay to true, and set an end date.
                     // Use ClockTime format, so that it doesn't get offset according to timezone.
-                    parsedEvent.m_startTime = KDateTime(QDate::fromString(startTimeString, "yyyy-MM-dd"), QTime(), KDateTime::ClockTime);
-                    parsedEvent.m_endTime   = KDateTime(QDate::fromString(endTimeString,   "yyyy-MM-dd"), QTime(), KDateTime::ClockTime);
+                    parsedEvent.m_startTime = KDateTime(QLocale::c().toDate(startTimeString, QLatin1String("yyyy-MM-dd")), QTime(), KDateTime::ClockTime);
+                    parsedEvent.m_endTime   = KDateTime(QLocale::c().toDate(endTimeString,   QLatin1String("yyyy-MM-dd")), QTime(), KDateTime::ClockTime);
                     if (parsedEvent.m_endTime == parsedEvent.m_startTime) {
                         parsedEvent.m_endExists = false; // single-day all day event; don't set endDt.
                     }
