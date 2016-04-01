@@ -647,8 +647,6 @@ QContactDetail GoogleContactStream::handleEntryStructuredPostalAddress()
                 address.setStreet(mXmlReader->readElementText());
             } else if (mXmlReader->qualifiedName() == "gd:pobox") {
                 address.setPostOfficeBox(mXmlReader->readElementText());
-            } else if (mXmlReader->qualifiedName() == "gd:neighborhood") {
-                address.setLocality(mXmlReader->readElementText());
             } else if (mXmlReader->qualifiedName() == "gd:city") {
                 address.setLocality(mXmlReader->readElementText());
             } else if (mXmlReader->qualifiedName() == "gd:region") {
@@ -985,7 +983,7 @@ void GoogleContactStream::encodeAddress(const QContactAddress &address)
     if (!address.street().isEmpty())
         mXmlWriter->writeTextElement("gd:street", address.street());
     if (!address.locality().isEmpty())
-        mXmlWriter->writeTextElement("gd:neighborhood", address.locality());
+        mXmlWriter->writeTextElement("gd:city", address.locality());
     if (!address.postOfficeBox().isEmpty())
         mXmlWriter->writeTextElement("gd:pobox", address.postOfficeBox());
     if (!address.region().isEmpty())
