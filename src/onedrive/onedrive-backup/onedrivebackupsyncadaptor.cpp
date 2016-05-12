@@ -105,7 +105,8 @@ void OneDriveBackupSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkS
 
 void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 {
-    QString deviceId = SsuDeviceInfo().deviceUid();
+    SsuDeviceInfo deviceInfo;
+    QString deviceId = deviceInfo.deviceUid();
     QByteArray hashedDeviceId = QCryptographicHash::hash(deviceId.toUtf8(), QCryptographicHash::Sha256);
     QString encodedDeviceId = QString::fromUtf8(hashedDeviceId.toBase64()).mid(0,12);
     if (deviceId.isEmpty()) {
@@ -114,7 +115,11 @@ void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessTo
         return;
     }
 
-    QString defaultRemotePath = QString::fromLatin1("Backups/%1").arg(encodedDeviceId);
+    QString deviceDisplayNamePrefix = deviceInfo.displayName(Ssu::DeviceModel);
+    if (!deviceDisplayNamePrefix.isEmpty()) {
+        deviceDisplayNamePrefix = deviceDisplayNamePrefix.replace(' ', '-') + '_';
+    }
+    QString defaultRemotePath = QString::fromLatin1("Backups/%1%2").arg(deviceDisplayNamePrefix).arg(encodedDeviceId);
     QString defaultLocalPath = QString::fromLatin1("%1/Backups/")
                                .arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
 
