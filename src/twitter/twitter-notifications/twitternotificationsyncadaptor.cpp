@@ -350,10 +350,13 @@ void TwitterNotificationSyncAdaptor::finishedRetweetsHandler()
             selfUserScreenName = tweet.value(QLatin1String("user")).toObject().value(QLatin1String("screen_name")).toString();
             QString retweetId = tweet.value(QLatin1String("id_str")).toString();
             int retweetsCount = tweet.value(QLatin1String("retweet_count")).toInt();
-            retweetCounts.insert(retweetId, retweetsCount);
-            if (!dbRetweetCounts.contains(retweetId) || dbRetweetCounts.value(retweetId) < retweetsCount) {
-                delta += retweetsCount - dbRetweetCounts.value(retweetId);
-                newlyRetweetedTweets.append(retweetId);
+
+            if (retweetsCount > 0) {
+                retweetCounts.insert(retweetId, retweetsCount);
+                if (!dbRetweetCounts.contains(retweetId) || dbRetweetCounts.value(retweetId) < retweetsCount) {
+                    delta += retweetsCount - dbRetweetCounts.value(retweetId);
+                    newlyRetweetedTweets.append(retweetId);
+                }
             }
         }
 
