@@ -1,4 +1,4 @@
-CONFIG += link_pkgconfig meegotouchevents-qt5
+CONFIG += link_pkgconfig
 PKGCONFIG += nemonotifications-qt5
 SOURCES += $$PWD/twitternotificationsyncadaptor.cpp
 HEADERS += $$PWD/twitternotificationsyncadaptor.h

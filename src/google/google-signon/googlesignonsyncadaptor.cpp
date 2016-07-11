@@ -113,7 +113,7 @@ void GoogleSignonSyncAdaptor::lowerCredentialsNeedUpdateFlag(int accountId)
 {
     Accounts::Account *acc = loadAccount(accountId);
     if (acc) {
-        SOCIALD_LOG_ERROR("GSSA: lowering CredentialsNeedUpdate flag");
+        SOCIALD_LOG_INFO("GSSA: lowering CredentialsNeedUpdate flag");
         Accounts::Service srv = m_accountManager.service(syncServiceName());
         acc->selectService(srv);
         acc->setValue(QStringLiteral("CredentialsNeedUpdate"), QVariant::fromValue<bool>(false));
