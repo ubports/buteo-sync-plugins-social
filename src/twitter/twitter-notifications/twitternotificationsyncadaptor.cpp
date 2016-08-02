@@ -259,10 +259,12 @@ void TwitterNotificationSyncAdaptor::finishedMentionsHandler()
             int sinceSpan = m_accountSyncProfile
                           ? m_accountSyncProfile->key(Buteo::KEY_SYNC_SINCE_DAYS_PAST, QStringLiteral("7")).toInt()
                           : 7;
-            if (m_lastSyncTimestamp.isValid() && createdTime < m_lastSyncTimestamp) {
-                SOCIALD_LOG_DEBUG("mention notification for account" << accountId << "came after last sync:" << createdTime << ":" << text);
+            if (!createdTime.isValid()) {
+                SOCIALD_LOG_WARNING("ignoring Twitter mention due to invalid createdTime parsed from:" << tweet.value(QLatin1String("created_at")).toString());
+            } else if (m_lastSyncTimestamp.isValid() && createdTime < m_lastSyncTimestamp) {
+                SOCIALD_LOG_DEBUG("mention notification for account" << accountId << "is older than last sync:" << createdTime << ":" << text);
                 break; // all subsequent notifications will be even older.
-            } else if (createdTime.daysTo(QDateTime::currentDateTimeUtc()) > sinceSpan) {
+            } else if (qAbs(createdTime.daysTo(QDateTime::currentDateTimeUtc())) > sinceSpan) {
                 SOCIALD_LOG_DEBUG("mention for account" << accountId << "is more than" << sinceSpan << "days old:" << createdTime << ":" << text);
             } else {
                 summary = userName;
@@ -271,7 +273,7 @@ void TwitterNotificationSyncAdaptor::finishedMentionsHandler()
                 body = qtTrId("qtn_social_notifications_twitter_mentioned_you");
                 timestamp = createdTime;
                 link = QLatin1String("https://mobile.twitter.com/") + userScreenName + QLatin1String("/status/") + mentionId;
-                mentionsCount ++;
+                mentionsCount+=1;
             }
         }
 
@@ -281,7 +283,7 @@ void TwitterNotificationSyncAdaptor::finishedMentionsHandler()
             Notification *notification = createNotification(accountId, Mention);
 
             // Set properties of the notification
-            notification->setItemCount(notification->itemCount() + mentionsCount);
+            notification->setItemCount(qMax(notification->itemCount(), 0) + mentionsCount);
             QStringList openUrlArgs;
             if (notification->itemCount() == 1) {
                 notification->setTimestamp(timestamp);
@@ -350,8 +352,15 @@ void TwitterNotificationSyncAdaptor::finishedRetweetsHandler()
             selfUserScreenName = tweet.value(QLatin1String("user")).toObject().value(QLatin1String("screen_name")).toString();
             QString retweetId = tweet.value(QLatin1String("id_str")).toString();
             int retweetsCount = tweet.value(QLatin1String("retweet_count")).toInt();
+            QDateTime createdTime = parseTwitterDateTime(tweet.value(QLatin1String("created_at")).toString());
 
-            if (retweetsCount > 0) {
+            // check to see if we need to post it to the notifications feed
+            int sinceSpan = m_accountSyncProfile
+                          ? m_accountSyncProfile->key(Buteo::KEY_SYNC_SINCE_DAYS_PAST, QStringLiteral("7")).toInt()
+                          : 7;
+            if (!createdTime.isValid() || qAbs(createdTime.daysTo(QDateTime::currentDateTimeUtc())) > sinceSpan) {
+                SOCIALD_LOG_DEBUG("retweet for account" << accountId << "is for tweet more than" << sinceSpan << "days old:" << createdTime << ", ignoring.");
+            } else if (retweetsCount > 0) {
                 retweetCounts.insert(retweetId, retweetsCount);
                 if (!dbRetweetCounts.contains(retweetId) || dbRetweetCounts.value(retweetId) < retweetsCount) {
                     delta += retweetsCount - dbRetweetCounts.value(retweetId);
