@@ -260,7 +260,7 @@ void TwitterNotificationSyncAdaptor::finishedMentionsHandler()
                           ? m_accountSyncProfile->key(Buteo::KEY_SYNC_SINCE_DAYS_PAST, QStringLiteral("7")).toInt()
                           : 7;
             if (!createdTime.isValid()) {
-                SOCIALD_LOG_WARNING("ignoring Twitter mention due to invalid createdTime parsed from:" << tweet.value(QLatin1String("created_at")).toString());
+                SOCIALD_LOG_INFO("ignoring Twitter mention due to invalid createdTime parsed from:" << tweet.value(QLatin1String("created_at")).toString());
             } else if (m_lastSyncTimestamp.isValid() && createdTime < m_lastSyncTimestamp) {
                 SOCIALD_LOG_DEBUG("mention notification for account" << accountId << "is older than last sync:" << createdTime << ":" << text);
                 break; // all subsequent notifications will be even older.
