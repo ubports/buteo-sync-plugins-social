@@ -100,6 +100,25 @@ void setGhostEventCleanupPerformed()
     settingsFile.sync();
 }
 
+void uniteIncidenceLists(const KCalCore::Incidence::List &first, KCalCore::Incidence::List *second)
+{
+    int originalSecondSize = second->size();
+    bool foundMatch = false;
+    Q_FOREACH (KCalCore::Incidence::Ptr inc, first) {
+        foundMatch = false;
+        for (int i = 0; i < originalSecondSize; ++i) {
+            if (inc->uid() == second->at(i)->uid() && inc->recurrenceId() == second->at(i)->recurrenceId()) {
+                // found a match
+                foundMatch = true;
+                break;
+            }
+        }
+        if (!foundMatch) {
+            second->append(inc);
+        }
+    }
+}
+
 QString gCalEventId(KCalCore::Incidence::Ptr event)
 {
     // we abuse the comments field to store our gcal-id.
@@ -1475,7 +1494,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
     }
 
     // load local event changes from the database.
-    KCalCore::Incidence::List deletedList, addedList, updatedList, allList;
+    KCalCore::Incidence::List deletedList, extraDeletedList, addedList, updatedList, allList;
     QMap<QString, KCalCore::Event::Ptr> allMap, updatedMap;
     QMap<QString, QPair<QString, KDateTime> > deletedMap; // gcalId to incidenceUid,recurrenceId
     QSet<QString> cleanSyncDeletionAdditions; // gcalIds
@@ -1487,9 +1506,19 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
         } else {
             m_storage->loadNotebookIncidences(googleNotebook->uid());
             m_storage->allIncidences(&allList, googleNotebook->uid());
-            m_storage->deletedIncidences(&deletedList, KDateTime(since), googleNotebook->uid());
             m_storage->insertedIncidences(&addedList, KDateTime(since), googleNotebook->uid());
             m_storage->modifiedIncidences(&updatedList, KDateTime(since), googleNotebook->uid());
+            // mkcal's implementation of deletedIncidences() is unusual.  It returns any event
+            // which was deleted after the second (datetime) parameter, IF AND ONLY IF
+            // it was created before that same datetime.
+            // Unfortunately, mkcal also only supports second-resolution datetimes, which means
+            // that the "last sync timestamp" cannot effectively be used as the parameter, since
+            // any events which were added to the database due to the previous sync cycle
+            // will (most likely) have been added within 1 second of the sync anchor timestamp.
+            // To work around this, we need to retrieve deleted incidences twice, and unite them.
+            m_storage->deletedIncidences(&deletedList, KDateTime(since), googleNotebook->uid());
+            m_storage->deletedIncidences(&extraDeletedList, KDateTime(since).addSecs(1), googleNotebook->uid());
+            uniteIncidenceLists(extraDeletedList, &deletedList);
             Q_FOREACH(const KCalCore::Incidence::Ptr incidence, allList) {
                 KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
                 QString gcalId = gCalEventId(incidence);
