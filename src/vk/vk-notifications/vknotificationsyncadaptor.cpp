@@ -154,7 +154,8 @@ void VKNotificationSyncAdaptor::saveVKNotificationFromObject(int accountId, cons
     QString type = notif.value("type").toString();
     QDateTime timestamp = parseVKDateTime(notif.value(QStringLiteral("date")));
     QJsonObject feedback = notif.value(QStringLiteral("feedback")).toObject();
-    Q_FOREACH (const QJsonValue &feedbackItem, feedback.value(QStringLiteral("items")).toArray()) {
+    QJsonArray feedbackItems = feedback.value(QStringLiteral("items")).toArray();
+    Q_FOREACH (const QJsonValue &feedbackItem, feedbackItems) {
         QJsonObject feedbackItemObj = feedbackItem.toObject();
         int fromId = int(feedbackItemObj.value(QStringLiteral("from_id")).toDouble());
         int toId = int(feedbackItemObj.value(QStringLiteral("to_id")).toDouble());
