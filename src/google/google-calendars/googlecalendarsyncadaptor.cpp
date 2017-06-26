@@ -146,6 +146,23 @@ void setGCalEventId(KCalCore::Incidence::Ptr event, const QString &id)
     event->addComment(QStringLiteral("jolla-sociald:gcal-id:%1").arg(id));
 }
 
+void setRemoteUidCustomField(KCalCore::Incidence::Ptr event, const QString &uid, const QString &id)
+{
+    // store it also in a custom property purely for invitation lookup purposes.
+    if (!uid.isEmpty()) {
+        event->setNonKDECustomProperty("X-SAILFISHOS-REMOTE-UID", uid.toUtf8());
+    } else {
+        // Google Calendar invites are sent as invitations with uid suffixed with @google.com.
+        if (id.endsWith(QLatin1String("@google.com"), Qt::CaseInsensitive)) {
+            event->setNonKDECustomProperty("X-SAILFISHOS-REMOTE-UID", id.toUtf8());
+        } else {
+            QString suffixedId = id;
+            suffixedId.append(QLatin1String("@google.com"));
+            event->setNonKDECustomProperty("X-SAILFISHOS-REMOTE-UID", suffixedId.toUtf8());
+        }
+    }
+}
+
 QString gCalETag(KCalCore::Incidence::Ptr event)
 {
     return event->customProperty("jolla-sociald", "gcal-etag");
@@ -731,6 +748,7 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
         START_EVENT_UPDATES_IF_REQUIRED(event, changed);
         setGCalETag(event, json.value(QLatin1String("etag")).toVariant().toString());
     }
+    setRemoteUidCustomField(event, json.value(QLatin1String("iCalUID")).toVariant().toString(), json.value(QLatin1String("id")).toVariant().toString());
     extractRecurrence(json.value(QLatin1String("recurrence")).toArray(), event, icalFormat);
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, isReadOnly, setReadOnly, json.value(QLatin1String("locked")).toVariant().toBool(), changed)
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, summary, setSummary, json.value(QLatin1String("summary")).toVariant().toString(), changed)
