@@ -609,6 +609,47 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
     }
 }
 
+void extractOrganizer(const QJsonObject &creatorObj, const QJsonObject &organizerObj, KCalCore::Event::Ptr event)
+{
+    if (!creatorObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
+                || !creatorObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
+        KCalCore::Person::Ptr organizer(new KCalCore::Person(
+                creatorObj.value(QLatin1String("displayName")).toVariant().toString(),
+                creatorObj.value(QLatin1String("email")).toVariant().toString()));
+        event->setOrganizer(organizer);
+    } else if (!organizerObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
+                || !organizerObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
+        KCalCore::Person::Ptr organizer(new KCalCore::Person(
+                organizerObj.value(QLatin1String("displayName")).toVariant().toString(),
+                organizerObj.value(QLatin1String("email")).toVariant().toString()));
+        event->setOrganizer(organizer);
+    } else {
+        KCalCore::Person::Ptr organizer(new KCalCore::Person);
+        event->setOrganizer(organizer);
+    }
+}
+
+void extractAttendees(const QJsonArray &attendees, KCalCore::Event::Ptr event)
+{
+    event->clearAttendees();
+    for (int i = 0; i < attendees.size(); ++i) {
+        QJsonObject attendeeObj = attendees.at(i).toObject();
+        if (!attendeeObj.value(QLatin1String("organizer")).toVariant().toBool()) {
+            KCalCore::Attendee::Ptr attendee(new KCalCore::Attendee(
+                    attendeeObj.value(QLatin1String("displayName")).toVariant().toString(),
+                    attendeeObj.value(QLatin1String("email")).toVariant().toString()));
+            if (attendeeObj.find(QLatin1String("optional")) != attendeeObj.end()) {
+                if (attendeeObj.value(QLatin1String("optional")).toVariant().toBool()) {
+                    attendee->setRole(KCalCore::Attendee::OptParticipant);
+                } else {
+                    attendee->setRole(KCalCore::Attendee::ReqParticipant);
+                }
+            }
+            event->addAttendee(attendee);
+        }
+    }
+}
+
 int nearestNemoReminderStartOffset(int googleStartOffset)
 {
     // Google supports arbitrary start offsets, whereas in Nemo's UI
@@ -750,6 +791,8 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
     }
     setRemoteUidCustomField(event, json.value(QLatin1String("iCalUID")).toVariant().toString(), json.value(QLatin1String("id")).toVariant().toString());
     extractRecurrence(json.value(QLatin1String("recurrence")).toArray(), event, icalFormat);
+    extractOrganizer(json.value(QLatin1String("creator")).toObject(), json.value(QLatin1String("organizer")).toObject(), event);
+    extractAttendees(json.value(QLatin1String("attendees")).toArray(), event);
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, isReadOnly, setReadOnly, json.value(QLatin1String("locked")).toVariant().toBool(), changed)
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, summary, setSummary, json.value(QLatin1String("summary")).toVariant().toString(), changed)
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, description, setDescription, json.value(QLatin1String("description")).toVariant().toString(), changed)
