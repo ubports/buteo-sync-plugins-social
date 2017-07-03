@@ -615,7 +615,7 @@ Automatable tests for sociald
 
 %build
 %qmake5 "DEFINES+=OUT_OF_PROCESS_PLUGIN"
-make %{?jobs:-j%jobs}
+make %{_smp_mflags}
 
 %pre
 rm -f /home/nemo/.cache/msyncd/sync/client/sociald.xml
