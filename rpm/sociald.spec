@@ -1,6 +1,6 @@
 Name:       sociald
 Summary:    Syncs device data from social services
-Version:    0.1.62
+Version:    0.1.63
 Release:    1
 Group:      System/Libraries
 License:    LGPLv2.1
