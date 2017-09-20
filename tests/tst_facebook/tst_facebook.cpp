@@ -43,7 +43,6 @@
 #include "facebookcalendarsyncadaptor.h"
 #include "facebookcontactsyncadaptor.h"
 #include "facebookimagesyncadaptor.h"
-#include "facebooknotificationsyncadaptor.h"
 
 class tst_facebook : public QObject
 {
@@ -64,7 +63,6 @@ private slots:
     void calendars();
     void contacts();
     void images();
-    void notifications();
     void posts();
 
 private:
@@ -249,12 +247,6 @@ void tst_facebook::contacts()
 void tst_facebook::images()
 {
     QScopedPointer<FacebookImageSyncAdaptor> fbConSa(new FacebookImageSyncAdaptor(this));
-    QSKIP("TODO: write unit tests for this");
-}
-
-void tst_facebook::notifications()
-{
-    QScopedPointer<FacebookNotificationSyncAdaptor> fbNotSa(new FacebookNotificationSyncAdaptor(this));
     QSKIP("TODO: write unit tests for this");
 }
 

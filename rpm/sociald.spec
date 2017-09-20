@@ -20,10 +20,11 @@ BuildRequires:  pkgconfig(libsailfishkeyprovider)
 BuildRequires:  qt5-qttools-linguist
 BuildRequires:  ssu-devel
 Requires: buteo-syncfw-qt5-msyncd
-Obsoletes: buteo-sync-plugins-google-simple <= 0.0.2
-Provides: buteo-sync-plugins-google-simple
 Requires: systemd
 Requires(post): systemd
+Obsoletes: buteo-sync-plugins-facebook-notifications
+Obsoletes: buteo-sync-plugins-google-simple <= 0.0.2
+Provides: buteo-sync-plugins-google-simple
 
 %description
 A Buteo plugin which provides data synchronization with various social services.
@@ -115,35 +116,6 @@ rm -f /home/nemo/.cache/msyncd/sync/facebook.Images.xml || :
 
 %post facebook-images
 systemctl-user try-restart msyncd.service || :
-
-
-%package facebook-notifications
-Summary:    Provides notification synchronisation with Facebook
-License:    LGPLv2.1
-Group:      System/Libraries
-BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
-BuildRequires:  qt5-qttools-linguist
-Requires: %{name} = %{version}-%{release}
-
-%description facebook-notifications
-Provides notification synchronisation with Facebook
-
-%files facebook-notifications
-#out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/facebook-notifications-client
-#in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libfacebook-notifications-client.so
-%config %{_sysconfdir}/buteo/profiles/client/facebook-notifications.xml
-%config %{_sysconfdir}/buteo/profiles/sync/facebook.Notifications.xml
-%{_datadir}/lipstick/notificationcategories/x-nemo.social.facebook.notification.conf
-
-%pre facebook-notifications
-rm -f /home/nemo/.cache/msyncd/sync/client/facebook-notifications.xml || :
-rm -f /home/nemo/.cache/msyncd/sync/facebook.Notifications.xml || :
-
-%post facebook-notifications
-systemctl-user try-restart msyncd.service || :
-
 
 
 %package facebook-signon
