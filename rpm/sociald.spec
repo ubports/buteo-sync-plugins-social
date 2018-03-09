@@ -22,9 +22,7 @@ BuildRequires:  ssu-devel
 Requires: buteo-syncfw-qt5-msyncd
 Requires: systemd
 Requires(post): systemd
-Obsoletes: buteo-sync-plugins-facebook-notifications
-Obsoletes: buteo-sync-plugins-google-simple <= 0.0.2
-Provides: buteo-sync-plugins-google-simple
+Obsoletes: sociald-facebook-notifications
 
 %description
 A Buteo plugin which provides data synchronization with various social services.

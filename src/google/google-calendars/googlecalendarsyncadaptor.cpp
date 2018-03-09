@@ -131,6 +131,7 @@ QString gCalEventId(KCalCore::Incidence::Ptr event)
     }
     return QString();
 }
+
 void setGCalEventId(KCalCore::Incidence::Ptr event, const QString &id)
 {
     // we abuse the comments field to store our gcal-id.
@@ -167,6 +168,7 @@ QString gCalETag(KCalCore::Incidence::Ptr event)
 {
     return event->customProperty("jolla-sociald", "gcal-etag");
 }
+
 void setGCalETag(KCalCore::Incidence::Ptr event, const QString &etag)
 {
     // note: custom properties are purged on incidence deletion.
