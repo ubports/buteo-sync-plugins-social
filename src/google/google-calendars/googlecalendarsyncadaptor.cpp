@@ -402,6 +402,25 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     QString eventId = gCalEventId(event);
     QJsonObject start, end, reminders;
 
+    QJsonArray attendees;
+    const KCalCore::Attendee::List attendeesList = event->attendees();
+    if (!attendeesList.isEmpty()) {
+        Q_FOREACH (auto att, attendeesList) {
+            if (att->email().isEmpty()) {
+                continue;
+            }
+            QJsonObject attendee;
+            attendee.insert("email", att->email());
+            if (att->role() == KCalCore::Attendee::OptParticipant) {
+                attendee.insert("optional", true);
+            }
+            const QString &name = att->name();
+            if (!name.isEmpty()) {
+                attendee.insert("displayName", name);
+            }
+            attendees.append(attendee);
+        }
+    }
     // insert the date/time and timeZone information into the Json object.
     // note that timeZone is required for recurring events, for some reason.
     if (event->dtStart().isDateOnly() || (event->allDay() && event->dtStart().time() == QTime(0,0,0))) {
@@ -432,6 +451,9 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     retn.insert(QLatin1String("start"), start);
     retn.insert(QLatin1String("end"), end);
     retn.insert(QLatin1String("sequence"), QString::number(event->revision()+1));
+    if (!attendees.isEmpty()) {
+        retn.insert(QLatin1String("attendees"), attendees);
+    }
     //retn.insert(QLatin1String("locked"), event->readOnly()); // only allow locking server-side.
     // we may wish to support locking/readonly from local side also, in the future.
 
