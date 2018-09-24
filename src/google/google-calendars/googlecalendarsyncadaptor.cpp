@@ -405,8 +405,9 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     QJsonArray attendees;
     const KCalCore::Attendee::List attendeesList = event->attendees();
     if (!attendeesList.isEmpty()) {
+        const QString &organizerEmail = event->organizer()->email();
         Q_FOREACH (auto att, attendeesList) {
-            if (att->email().isEmpty()) {
+            if (att->email().isEmpty() || att->email() == organizerEmail) {
                 continue;
             }
             QJsonObject attendee;
