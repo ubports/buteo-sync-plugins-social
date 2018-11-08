@@ -815,7 +815,9 @@ void GoogleTwoWayContactSyncAdaptor::purgeAccount(int pid)
 
 void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
 {
-    if (m_accessTokens[accountId].isEmpty() || syncAborted()) {
+    if (m_accessTokens[accountId].isEmpty()
+            || syncAborted()
+            || status() == SocialNetworkSyncAdaptor::Error) {
         // account failure occurred before sync process was started,
         // or other error occurred during sync.
         // in this case we have nothing left to do except cleanup.
