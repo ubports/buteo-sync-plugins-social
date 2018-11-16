@@ -117,6 +117,8 @@ private:
     QMap<int, int> m_apiRequestsRemaining;
     QMap<int, QMap<QString, QString> > m_queuedAvatarsForDownload; // contact guid -> remote avatar path
     QMap<int, QMap<QString, QString> > m_downloadedContactAvatars; // contact guid -> local file path
+
+    bool m_allowFinalCleanup;
 };
 
 #endif // GOOGLETWOWAYCONTACTSYNCADAPTOR_H

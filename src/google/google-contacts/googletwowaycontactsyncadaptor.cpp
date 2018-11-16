@@ -69,6 +69,7 @@ GoogleTwoWayContactSyncAdaptor::GoogleTwoWayContactSyncAdaptor(QObject *parent)
     : GoogleDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Contacts, parent)
     , QtContactsSqliteExtensions::TwoWayContactSyncAdapter(QStringLiteral("google"))
     , m_workerObject(new GoogleContactImageDownloader())
+    , m_allowFinalCleanup(false)
 {
     connect(m_workerObject, &AbstractImageDownloader::imageDownloaded,
             this, &GoogleTwoWayContactSyncAdaptor::imageDownloaded);
@@ -815,12 +816,17 @@ void GoogleTwoWayContactSyncAdaptor::purgeAccount(int pid)
 
 void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
 {
-    if (m_accessTokens[accountId].isEmpty() || syncAborted()) {
+    if (m_accessTokens[accountId].isEmpty()
+            || syncAborted()
+            || status() == SocialNetworkSyncAdaptor::Error) {
         // account failure occurred before sync process was started,
         // or other error occurred during sync.
         // in this case we have nothing left to do except cleanup.
         return;
     }
+
+    // sync was successful, allow cleaning up contacts from removed accounts.
+    m_allowFinalCleanup = true;
 
     // first, ensure we update any avatars required.
     if (m_downloadedContactAvatars[accountId].size()) {
@@ -882,6 +888,15 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
 
 void GoogleTwoWayContactSyncAdaptor::finalCleanup()
 {
+    // Only perform the cleanup if the sync cycle was successful.
+    // Note: purgeDataForOldAccount() will still be invoked by Buteo
+    // in response to the account being deleted when restoring the
+    // backup, so we cannot avoid the problem of "lost contacts"
+    // completely.  See JB#38210 for more information.
+    if (!m_allowFinalCleanup) {
+        return;
+    }
+
     // Synchronously find any contacts which need to be removed,
     // which were somehow "left behind" by the sync process.
     // Also, determine if any avatars were not synced, and remove those details.
