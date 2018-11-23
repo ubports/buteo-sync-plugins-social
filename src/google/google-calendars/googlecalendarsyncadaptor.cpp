@@ -636,17 +636,17 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
 
 void extractOrganizer(const QJsonObject &creatorObj, const QJsonObject &organizerObj, KCalCore::Event::Ptr event)
 {
-    if (!creatorObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
+    if (!organizerObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
+                    || !organizerObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
+            KCalCore::Person::Ptr organizer(new KCalCore::Person(
+                    organizerObj.value(QLatin1String("displayName")).toVariant().toString(),
+                    organizerObj.value(QLatin1String("email")).toVariant().toString()));
+            event->setOrganizer(organizer);
+    } else if (!creatorObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
                 || !creatorObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
         KCalCore::Person::Ptr organizer(new KCalCore::Person(
                 creatorObj.value(QLatin1String("displayName")).toVariant().toString(),
                 creatorObj.value(QLatin1String("email")).toVariant().toString()));
-        event->setOrganizer(organizer);
-    } else if (!organizerObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
-                || !organizerObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
-        KCalCore::Person::Ptr organizer(new KCalCore::Person(
-                organizerObj.value(QLatin1String("displayName")).toVariant().toString(),
-                organizerObj.value(QLatin1String("email")).toVariant().toString()));
         event->setOrganizer(organizer);
     } else {
         KCalCore::Person::Ptr organizer(new KCalCore::Person);
@@ -670,7 +670,32 @@ void extractAttendees(const QJsonArray &attendees, KCalCore::Event::Ptr event)
                     attendee->setRole(KCalCore::Attendee::ReqParticipant);
                 }
             }
+            if (attendeeObj.find(QLatin1String("responseStatus")) != attendeeObj.end()) {
+                const QString &responseValue = attendeeObj.value(QLatin1String("responseStatus")).toVariant().toString();
+                if (responseValue == "needsAction") {
+                    attendee->setStatus(KCalCore::Attendee::NeedsAction);
+                } else if (responseValue == "accepted") {
+                    attendee->setStatus(KCalCore::Attendee::Accepted);
+                } else if (responseValue == "declined") {
+                    attendee->setStatus(KCalCore::Attendee::Declined);
+                } else {
+                    attendee->setStatus(KCalCore::Attendee::Tentative);
+                }
+            }
+            attendee->setRSVP(true);
             event->addAttendee(attendee);
+        } else {
+            KCalCore::Person::Ptr calOrganizer = event->organizer();
+            if (!calOrganizer.isNull() && !calOrganizer->isEmpty()) {
+                continue;
+            }
+            if (!attendeeObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
+                        || !attendeeObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
+                KCalCore::Person::Ptr organizer(new KCalCore::Person(
+                        attendeeObj.value(QLatin1String("displayName")).toVariant().toString(),
+                        attendeeObj.value(QLatin1String("email")).toVariant().toString()));
+                event->setOrganizer(organizer);
+            }
         }
     }
 }
