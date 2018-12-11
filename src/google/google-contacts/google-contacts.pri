@@ -1,6 +1,6 @@
 CONFIG += link_pkgconfig
 PKGCONFIG += Qt5Contacts qtcontacts-sqlite-qt5-extensions
-QT += contacts-private
+QT += contacts-private gui
 
 SOURCES += \
     $$PWD/googletwowaycontactsyncadaptor.cpp \

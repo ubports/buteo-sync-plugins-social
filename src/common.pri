@@ -12,6 +12,9 @@ QT += \
     dbus \
     sql
 
+QT -= \
+    gui
+
 # the unit tests need to provide a custom QNAM and uses a different database directory
 HEADERS += $$PWD/common/socialdnetworkaccessmanager_p.h
 !contains(DEFINES, 'SOCIALD_TEST_DEFINE') {
