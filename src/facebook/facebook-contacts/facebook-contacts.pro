@@ -1,5 +1,4 @@
 TARGET = facebook-contacts-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=FacebookContactsPlugin"
 DEFINES += CLASSNAME_H=\\\"facebookcontactsplugin.h\\\"

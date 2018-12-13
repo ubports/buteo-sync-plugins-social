@@ -1,5 +1,4 @@
 TARGET = vk-posts-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=VKPostsPlugin"
 DEFINES += CLASSNAME_H=\\\"vkpostsplugin.h\\\"

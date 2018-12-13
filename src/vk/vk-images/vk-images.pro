@@ -1,5 +1,4 @@
 TARGET = vk-images-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=VKImagesPlugin"
 DEFINES += CLASSNAME_H=\\\"vkimagesplugin.h\\\"

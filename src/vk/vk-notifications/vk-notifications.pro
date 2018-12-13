@@ -1,5 +1,4 @@
 TARGET = vk-notifications-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=VKNotificationsPlugin"
 DEFINES += CLASSNAME_H=\\\"vknotificationsplugin.h\\\"

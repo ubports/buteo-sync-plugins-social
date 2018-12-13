@@ -1,5 +1,4 @@
 TARGET = twitter-notifications-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=TwitterNotificationsPlugin"
 DEFINES += CLASSNAME_H=\\\"twitternotificationsplugin.h\\\"

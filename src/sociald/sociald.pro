@@ -1,5 +1,4 @@
 TARGET = sociald-client
-VERSION = 0.0.81
 
 DEFINES += "CLASSNAME=SocialdPlugin"
 DEFINES += CLASSNAME_H=\\\"socialdplugin.h\\\"

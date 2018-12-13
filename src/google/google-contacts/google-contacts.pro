@@ -1,5 +1,4 @@
 TARGET = google-contacts-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=GoogleContactsPlugin"
 DEFINES += CLASSNAME_H=\\\"googlecontactsplugin.h\\\"

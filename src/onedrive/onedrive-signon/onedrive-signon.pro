@@ -1,5 +1,4 @@
 TARGET = onedrive-signon-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=OneDriveSignonPlugin"
 DEFINES += CLASSNAME_H=\\\"onedrivesignonplugin.h\\\"

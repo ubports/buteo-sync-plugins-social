@@ -1,5 +1,4 @@
 TARGET = google-signon-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=GoogleSignonPlugin"
 DEFINES += CLASSNAME_H=\\\"googlesignonplugin.h\\\"

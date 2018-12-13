@@ -1,5 +1,4 @@
 TARGET = twitter-posts-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=TwitterPostsPlugin"
 DEFINES += CLASSNAME_H=\\\"twitterpostsplugin.h\\\"

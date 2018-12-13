@@ -1,5 +1,4 @@
 TARGET = facebook-calendars-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=FacebookCalendarsPlugin"
 DEFINES += CLASSNAME_H=\\\"facebookcalendarsplugin.h\\\"

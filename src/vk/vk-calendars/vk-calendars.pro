@@ -1,5 +1,4 @@
 TARGET = vk-calendars-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=VKCalendarsPlugin"
 DEFINES += CLASSNAME_H=\\\"vkcalendarsplugin.h\\\"
