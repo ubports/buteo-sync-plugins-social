@@ -1,5 +1,4 @@
 TARGET = dropbox-images-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=DropboxImagesPlugin"
 DEFINES += CLASSNAME_H=\\\"dropboximagesplugin.h\\\"

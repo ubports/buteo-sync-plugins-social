@@ -1,5 +1,4 @@
 TARGET = dropbox-backup-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=DropboxBackupPlugin"
 DEFINES += CLASSNAME_H=\\\"dropboxbackupplugin.h\\\"

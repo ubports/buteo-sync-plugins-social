@@ -1,5 +1,4 @@
 TARGET = onedrive-images-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=OneDriveImagesPlugin"
 DEFINES += CLASSNAME_H=\\\"onedriveimagesplugin.h\\\"

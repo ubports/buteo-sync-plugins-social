@@ -1,5 +1,4 @@
 TARGET = onedrive-backup-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=OneDriveBackupPlugin"
 DEFINES += CLASSNAME_H=\\\"onedrivebackupplugin.h\\\"

@@ -1,5 +1,4 @@
 TARGET = facebook-images-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=FacebookImagesPlugin"
 DEFINES += CLASSNAME_H=\\\"facebookimagesplugin.h\\\"

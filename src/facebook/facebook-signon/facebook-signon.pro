@@ -1,5 +1,4 @@
 TARGET = facebook-signon-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=FacebookSignonPlugin"
 DEFINES += CLASSNAME_H=\\\"facebooksignonplugin.h\\\"

@@ -1,5 +1,4 @@
 TARGET = vk-contacts-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=VKContactsPlugin"
 DEFINES += CLASSNAME_H=\\\"vkcontactsplugin.h\\\"

@@ -1,5 +1,4 @@
 TARGET = google-calendars-client
-VERSION = 0.0.1
 
 DEFINES += "CLASSNAME=GoogleCalendarsPlugin"
 DEFINES += CLASSNAME_H=\\\"googlecalendarsplugin.h\\\"
