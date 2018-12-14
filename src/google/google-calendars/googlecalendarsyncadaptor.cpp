@@ -31,6 +31,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSettings>
+#include <QtCore/QSet>
 
 #include <QtSql/QSqlQuery>
 #include <QtSql/QSqlError>
@@ -54,6 +55,55 @@
 namespace {
 
 static int GOOGLE_CAL_SYNC_PLUGIN_VERSION = 2;
+
+int nearestNemoReminderStartOffset(int googleStartOffset)
+{
+    // Google supports arbitrary start offsets, whereas in Nemo's UI
+    // we only allow specific reminder offsets.
+    // See nemo-qml-plugin-calendar::NemoCalendarEvent::Reminder for
+    // those offset definitions.
+    // Also, Nemo reminder offsets are negative and in seconds,
+    // whereas Google start offsets are positive and in minutes.
+    if (googleStartOffset >= 0 && googleStartOffset <= 5) {
+        return -5 * 60;     // 5 minutes before event start
+    } else if (googleStartOffset > 5 && googleStartOffset <= 15) {
+        return -15 * 60;    // 15 minutes before event start
+    } else if (googleStartOffset > 15 && googleStartOffset <= 30) {
+        return -30 * 60;    // 30 minutes before event start
+    } else if (googleStartOffset > 30 && googleStartOffset <= 60) {
+        return -60 * 60;    // 1 hour before event start
+    } else if (googleStartOffset > 60 && googleStartOffset <= 120) {
+        return -120 * 60;   // 2 hours before event start
+    } else if (googleStartOffset > 120 && googleStartOffset <= 1440) {
+        return -1440 * 60;  // 1 day before event start (24 hours)
+    } else if (googleStartOffset > 1440) {
+        return -2880 * 60;  // 2 days before event start (48 hours)
+    }
+
+    // default reminder: 15 minutes before event start.
+    return -15 * 60;
+}
+
+int googleStartOffsetForReminderStartOffset(int seconds)
+{
+    if (seconds >= 0) {
+        return 0;
+    } else if (seconds >= (-5 * 60)) {
+        return 5;
+    } else if (seconds >= (-15 * 60)) {
+        return 15;
+    } else if (seconds >= (-30 * 60)) {
+        return 30;
+    } else if (seconds >= (-60 * 60)) {
+        return 60;
+    } else if (seconds >= (-120 * 60)) {
+        return 120;
+    } else if (seconds >= (-1440 * 60)) {
+        return 1440;
+    } else {
+        return 2880;
+    }
+}
 
 void errorDumpStr(const QString &str)
 {
@@ -400,7 +450,7 @@ KDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
 QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, bool setUidProperty = false)
 {
     QString eventId = gCalEventId(event);
-    QJsonObject start, end, reminders;
+    QJsonObject start, end;
 
     QJsonArray attendees;
     const KCalCore::Attendee::List attendeesList = event->attendees();
@@ -458,11 +508,31 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     //retn.insert(QLatin1String("locked"), event->readOnly()); // only allow locking server-side.
     // we may wish to support locking/readonly from local side also, in the future.
 
-    // if the event has no alarms associated with it, don't let Google add one automatically.
-    if (event->alarms().count() == 0) {
-        reminders.insert(QLatin1String("useDefault"), false);
-        retn.insert(QLatin1String("reminders"), reminders);
+    // if the event has no alarms associated with it, don't let Google add one automatically
+    // otherwise, attempt to upsync the alarms as popup reminders.
+    QJsonObject reminders;
+    if (event->alarms().count()) {
+        QJsonArray overrides;
+        KCalCore::Alarm::List alarms = event->alarms();
+        for (int i = 0; i < alarms.count(); ++i) {
+            // only upsync non-procedure alarms as popup reminders.
+            QSet<int> seenMinutes;
+            if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
+                int minutes = googleStartOffsetForReminderStartOffset(
+                        alarms.at(i)->startOffset().asSeconds());
+                if (!seenMinutes.contains(minutes)) {
+                    QJsonObject override;
+                    override.insert(QLatin1String("method"), QLatin1String("popup"));
+                    override.insert(QLatin1String("minutes"), minutes);
+                    overrides.append(override);
+                    seenMinutes.insert(minutes);
+                }
+            }
+        }
+        reminders.insert(QLatin1String("overrides"), overrides);
     }
+    reminders.insert(QLatin1String("useDefault"), false);
+    retn.insert(QLatin1String("reminders"), reminders);
 
     if (setUidProperty) {
         // now we store private extended properties: local uid.
@@ -700,34 +770,6 @@ void extractAttendees(const QJsonArray &attendees, KCalCore::Event::Ptr event)
     }
 }
 
-int nearestNemoReminderStartOffset(int googleStartOffset)
-{
-    // Google supports arbitrary start offsets, whereas in Nemo's UI
-    // we only allow specific reminder offsets.
-    // See nemo-qml-plugin-calendar::NemoCalendarEvent::Reminder for
-    // those offset definitions.
-    // Also, Nemo reminder offsets are negative and in seconds,
-    // whereas Google start offsets are positive and in minutes.
-    if (googleStartOffset >= 0 && googleStartOffset <= 5) {
-        return -5 * 60;     // 5 minutes before event start
-    } else if (googleStartOffset > 5 && googleStartOffset <= 15) {
-        return -15 * 60;    // 15 minutes before event start
-    } else if (googleStartOffset > 15 && googleStartOffset <= 30) {
-        return -30 * 60;    // 30 minutes before event start
-    } else if (googleStartOffset > 30 && googleStartOffset <= 60) {
-        return -60 * 60;    // 1 hour before event start
-    } else if (googleStartOffset > 60 && googleStartOffset <= 120) {
-        return -120 * 60;   // 2 hours before event start
-    } else if (googleStartOffset > 120 && googleStartOffset <= 1440) {
-        return -1440 * 60;  // 1 day before event start (24 hours)
-    } else if (googleStartOffset > 1440) {
-        return -2880 * 60;  // 2 days before event start (48 hours)
-    }
-
-    // default reminder: 15 minutes before event start.
-    return -15 * 60;
-}
-
 #define START_EVENT_UPDATES_IF_REQUIRED(event, changed) \
     if (*changed == false) {                            \
         event->startUpdates();                          \
@@ -750,12 +792,12 @@ int nearestNemoReminderStartOffset(int googleStartOffset)
 
 void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defaultReminderStartOffset, bool *changed)
 {
-    int startOffset = -1;
+    QSet<int> startOffsets;
     if (json.contains(QStringLiteral("reminders"))) {
         QJsonObject reminders = json.value(QStringLiteral("reminders")).toObject();
         if (reminders.value(QStringLiteral("useDefault")).toBool()) {
             if (defaultReminderStartOffset > 0) {
-                startOffset = defaultReminderStartOffset;
+                startOffsets.insert(defaultReminderStartOffset);
             } else {
                 SOCIALD_LOG_DEBUG("not adding default reminder even though requested: not popup or invalid start offset.");
             }
@@ -764,46 +806,52 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
             for (int i = 0; i < overrides.size(); ++i) {
                 QJsonObject override = overrides.at(i).toObject();
                 if (override.value(QStringLiteral("method")).toString() == QStringLiteral("popup")) {
-                    startOffset = override.value(QStringLiteral("minutes")).toInt();
+                    startOffsets.insert(override.value(QStringLiteral("minutes")).toInt());
                 }
             }
         }
-        if (startOffset > -1) {
-            startOffset = nearestNemoReminderStartOffset(startOffset);
+        // search for all reminders to see if they are represented by an alarm.
+        bool needRemoveAndRecreate = false;
+        for (QSet<int>::const_iterator it = startOffsets.constBegin(); it != startOffsets.constEnd(); it++) {
+            int startOffset = nearestNemoReminderStartOffset(*it);
             SOCIALD_LOG_DEBUG("event needs reminder with start offset (seconds):" << startOffset);
             KCalCore::Alarm::List alarms = event->alarms();
-            int alarmCount = 0;
-            // check that we have only one non-procedure alarm,
-            // and then check to see if its start offset is correct.
+            int alarmsCount = 0;
             for (int i = 0; i < alarms.count(); ++i) {
                 // we don't count Procedure type alarms.
                 if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
-                    alarmCount += 1;
+                    alarmsCount += 1;
                     if (alarms.at(i)->startOffset().asSeconds() == startOffset) {
-                        // no change required to this alarm.
+                        SOCIALD_LOG_DEBUG("event already has reminder with start offset (seconds):" << startOffset);
                     } else {
-                        alarmCount += 1; // this will cause alarm modification.
+                        SOCIALD_LOG_DEBUG("event is missing reminder with start offset (seconds):" << startOffset);
+                        needRemoveAndRecreate = true;
                     }
                 }
             }
-            if (alarmCount == 1) {
-                // no need to modify alarms for this event
-                SOCIALD_LOG_DEBUG("event already has reminder with start offset (seconds):" << startOffset);
-            } else {
-                SOCIALD_LOG_DEBUG("setting event reminder with start offset (seconds):" << startOffset);
-                START_EVENT_UPDATES_IF_REQUIRED(event, changed);
-                for (int i = 0; i < alarms.count(); ++i) {
-                    if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
-                        event->removeAlarm(alarms.at(i));
-                    }
+            if (alarmsCount != startOffsets.count()) {
+                SOCIALD_LOG_DEBUG("event has too many reminders, recreating alarms.");
+                needRemoveAndRecreate = true;
+            }
+        }
+        if (needRemoveAndRecreate) {
+            START_EVENT_UPDATES_IF_REQUIRED(event, changed);
+            KCalCore::Alarm::List alarms = event->alarms();
+            for (int i = 0; i < alarms.count(); ++i) {
+                if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
+                    event->removeAlarm(alarms.at(i));
                 }
+            }
+            for (QSet<int>::const_iterator it = startOffsets.constBegin(); it != startOffsets.constEnd(); it++) {
+                int startOffset = nearestNemoReminderStartOffset(*it);
+                SOCIALD_LOG_DEBUG("setting event reminder with start offset (seconds):" << startOffset);
                 KCalCore::Alarm::Ptr alarm = event->newAlarm();
                 alarm->setEnabled(true);
                 alarm->setStartOffset(KCalCore::Duration(startOffset));
             }
         }
     }
-    if (startOffset == -1) {
+    if (startOffsets.isEmpty()) {
         // no reminders were defined in the json received from Google.
         // remove any alarms as required from the local event.
         KCalCore::Alarm::List alarms = event->alarms();
