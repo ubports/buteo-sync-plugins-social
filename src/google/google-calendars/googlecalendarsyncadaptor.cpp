@@ -56,55 +56,6 @@ namespace {
 
 static int GOOGLE_CAL_SYNC_PLUGIN_VERSION = 2;
 
-int nearestNemoReminderStartOffset(int googleStartOffset)
-{
-    // Google supports arbitrary start offsets, whereas in Nemo's UI
-    // we only allow specific reminder offsets.
-    // See nemo-qml-plugin-calendar::NemoCalendarEvent::Reminder for
-    // those offset definitions.
-    // Also, Nemo reminder offsets are negative and in seconds,
-    // whereas Google start offsets are positive and in minutes.
-    if (googleStartOffset >= 0 && googleStartOffset <= 5) {
-        return -5 * 60;     // 5 minutes before event start
-    } else if (googleStartOffset > 5 && googleStartOffset <= 15) {
-        return -15 * 60;    // 15 minutes before event start
-    } else if (googleStartOffset > 15 && googleStartOffset <= 30) {
-        return -30 * 60;    // 30 minutes before event start
-    } else if (googleStartOffset > 30 && googleStartOffset <= 60) {
-        return -60 * 60;    // 1 hour before event start
-    } else if (googleStartOffset > 60 && googleStartOffset <= 120) {
-        return -120 * 60;   // 2 hours before event start
-    } else if (googleStartOffset > 120 && googleStartOffset <= 1440) {
-        return -1440 * 60;  // 1 day before event start (24 hours)
-    } else if (googleStartOffset > 1440) {
-        return -2880 * 60;  // 2 days before event start (48 hours)
-    }
-
-    // default reminder: 15 minutes before event start.
-    return -15 * 60;
-}
-
-int googleStartOffsetForReminderStartOffset(int seconds)
-{
-    if (seconds >= 0) {
-        return 0;
-    } else if (seconds >= (-5 * 60)) {
-        return 5;
-    } else if (seconds >= (-15 * 60)) {
-        return 15;
-    } else if (seconds >= (-30 * 60)) {
-        return 30;
-    } else if (seconds >= (-60 * 60)) {
-        return 60;
-    } else if (seconds >= (-120 * 60)) {
-        return 120;
-    } else if (seconds >= (-1440 * 60)) {
-        return 1440;
-    } else {
-        return 2880;
-    }
-}
-
 void errorDumpStr(const QString &str)
 {
     // Dump the entire string to the log.
@@ -518,8 +469,7 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
             // only upsync non-procedure alarms as popup reminders.
             QSet<int> seenMinutes;
             if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
-                int minutes = googleStartOffsetForReminderStartOffset(
-                        alarms.at(i)->startOffset().asSeconds());
+                const int minutes = (alarms.at(i)->startOffset().asSeconds() / 60) * -1;
                 if (!seenMinutes.contains(minutes)) {
                     QJsonObject override;
                     override.insert(QLatin1String("method"), QLatin1String("popup"));
@@ -813,7 +763,7 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
         // search for all reminders to see if they are represented by an alarm.
         bool needRemoveAndRecreate = false;
         for (QSet<int>::const_iterator it = startOffsets.constBegin(); it != startOffsets.constEnd(); it++) {
-            int startOffset = nearestNemoReminderStartOffset(*it);
+            const int startOffset = (*it) * -60; // convert minutes to seconds (before event)
             SOCIALD_LOG_DEBUG("event needs reminder with start offset (seconds):" << startOffset);
             KCalCore::Alarm::List alarms = event->alarms();
             int alarmsCount = 0;
@@ -843,7 +793,7 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
                 }
             }
             for (QSet<int>::const_iterator it = startOffsets.constBegin(); it != startOffsets.constEnd(); it++) {
-                int startOffset = nearestNemoReminderStartOffset(*it);
+                const int startOffset = (*it) * -60; // convert minutes to seconds (before event)
                 SOCIALD_LOG_DEBUG("setting event reminder with start offset (seconds):" << startOffset);
                 KCalCore::Alarm::Ptr alarm = event->newAlarm();
                 alarm->setEnabled(true);
