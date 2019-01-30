@@ -7,7 +7,6 @@ License:    LGPLv2.1
 URL:        https://bitbucket.org/jolla/base-sociald
 Source0:    %{name}-%{version}.tar.bz2
 BuildRequires:  pkgconfig(Qt5Core)
-BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(Qt5Sql)
 BuildRequires:  pkgconfig(Qt5Network)
@@ -68,6 +67,7 @@ systemctl-user try-restart msyncd.service || :
 Summary:    Provides contact synchronisation with Facebook
 License:    LGPLv2.1
 Group:      System/Libraries
+BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 Requires: %{name} = %{version}-%{release}
@@ -174,6 +174,7 @@ systemctl-user try-restart msyncd.service || :
 Summary:    Provides contact synchronisation with Google
 License:    LGPLv2.1
 Group:      System/Libraries
+BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.1.58
 Requires: %{name} = %{version}-%{release}
@@ -504,6 +505,7 @@ systemctl-user restart msyncd.service || :
 Summary:    Provides contact synchronisation with VK
 License:    LGPLv2.1
 Group:      System/Libraries
+BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 Requires: %{name} = %{version}-%{release}
