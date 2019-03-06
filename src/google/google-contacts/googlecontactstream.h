@@ -107,6 +107,7 @@ private:
     QContactDetail handleEntryNickname();
     QContactDetail handleEntryOccupation();
     QContactDetail handleEntryWebsite();
+    QContactDetail handleEntryJot();
     QContactDetail handleEntryComments();
     QContactDetail handleEntryEmail();
     QContactDetail handleEntryIm();
@@ -152,7 +153,7 @@ private:
     void encodeAddress(const QContactAddress &address);
     void encodeUrl(const QContactUrl &url);
     void encodeBirthday(const QContactBirthday &birthday);
-    void encodeNote(const QContactNote &note);
+    void encodeNotes(const QList<QContactNote> &notes);
     void encodeHobby(const QContactHobby &hobby);
     void encodeGeoLocation(const QContactGeoLocation &geolocation);
     void encodeOrganization(const QContactOrganization &organization);
