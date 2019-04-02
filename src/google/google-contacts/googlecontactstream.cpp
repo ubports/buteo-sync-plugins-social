@@ -30,6 +30,83 @@
 
 #include <QDateTime>
 
+static void dumpXml(const QByteArray &xml)
+{
+    // this algorithm doesn't handle a lot of stuff (escaped slashes/angle-brackets, slashes/angle-brackets in text, etc) but it works:
+    // see < then read until > and that becomes "tag".  Print indent, print tag, print newline.  If tag didn't contain /> then indent += "    " else deindent.
+    // see anything else, then read until < and that becomes "text".  Print indent, print text, print newline.
+    QString indent;
+    QString formatted;
+    QString allData = QString::fromUtf8(xml);
+    for (QString::const_iterator it = allData.constBegin(); it != allData.constEnd(); ) {
+        QString text;
+        QString tag;
+        bool seenSlash = false, needDeindent = false;
+        // skip over empty lines
+        if (*it == QChar('\n') || *it == QChar('\r')) {
+            it++;
+            continue;
+        }
+        // if found a start of tag, read until the end of the tag
+        if (*it == QChar('<')) {
+            while (it != allData.constEnd() && *it != QChar('>')) {
+                tag += *it;
+                if (*it == '/') {
+                    if (tag == QStringLiteral("</")) {
+                        needDeindent = true;
+                    }
+                }
+                it++;
+            }
+            // read the closing >
+            if (it != allData.constEnd()) {
+                tag += *it;
+                it++;
+            }
+            // check to see if it was a self-ending tag
+            seenSlash = tag.endsWith(QStringLiteral("/>"))
+                     || tag.endsWith(QStringLiteral("/ >"));
+            // adjust the indentation if required
+            if (needDeindent && indent.size() >= 4) {
+                // if the tag we saw was an end-tag, reduce the indentation and then print the tag
+                indent.chop(4);
+                formatted += indent + tag + '\n';
+            } else if (!seenSlash) {
+                // if the tag we saw was a begin-tag, print the tag and then increase the indentation
+                formatted += indent + tag + '\n';
+                indent += QStringLiteral("    ");
+            } else {
+                // if the tag we saw was a self-ending tag, don't adjust the indentation, print the tag
+                formatted += indent + tag + '\n';
+            }
+        } else {
+            // read until the next start of a tag
+            while (it != allData.constEnd() && *it != QChar('<')) {
+                text += *it;
+                it++;
+            }
+            formatted += indent + text + '\n';
+        }
+    }
+
+    SOCIALD_LOG_TRACE("---------- Dumping XML data:");
+    Q_FOREACH (const QString &line, formatted.split('\n')) {
+        SOCIALD_LOG_TRACE(line);
+    }
+}
+
+static bool traceOutputEnabled()
+{
+    const QByteArray loggingLevelByteArray = qgetenv("MSYNCD_LOGGING_LEVEL");
+    const QString loggingLevelStr = QString::fromLocal8Bit(loggingLevelByteArray.constData());
+    const QByteArray dumpXmlByteArray = qgetenv("MSYNCD_DUMP_XML");
+    const QString dumpXmlStr = QString::fromLocal8Bit(dumpXmlByteArray.constData());
+    bool ok = false;
+    int level = loggingLevelStr.toInt(&ok);
+    int dump = dumpXmlStr.toInt(&ok);
+    return ok && level >= 8 && dump == 1;
+}
+
 GoogleContactStream::GoogleContactStream(bool response, int accountId, const QString &accountEmail, QObject* parent)
     : QObject(parent)
     , mXmlReader(0)
@@ -51,6 +128,11 @@ GoogleContactStream::~GoogleContactStream()
 
 GoogleContactAtom *GoogleContactStream::parse(const QByteArray &xmlBuffer)
 {
+    static bool traceEnabled = traceOutputEnabled();
+    if (traceEnabled) {
+        dumpXml(xmlBuffer);
+    }
+
     mXmlReader = new QXmlStreamReader(xmlBuffer);
     mAtom = new GoogleContactAtom;
 
@@ -124,11 +206,12 @@ void GoogleContactStream::initFunctionMap()
     mContactFunctionMap.insert("updated", &GoogleContactStream::handleEntryUpdated);
     mContactFunctionMap.insert("app:edited", &GoogleContactStream::handleEntryUpdated);
     mContactFunctionMap.insert("gContact:birthday", &GoogleContactStream::handleEntryBirthday);
-    mContactFunctionMap.insert("gcontact::gender", &GoogleContactStream::handleEntryGender);
+    mContactFunctionMap.insert("gContact:gender", &GoogleContactStream::handleEntryGender);
     mContactFunctionMap.insert("gContact:hobby", &GoogleContactStream::handleEntryHobby);
     mContactFunctionMap.insert("gContact:nickname", &GoogleContactStream::handleEntryNickname);
     mContactFunctionMap.insert("gContact:occupation", &GoogleContactStream::handleEntryOccupation);
     mContactFunctionMap.insert("gContact:website", &GoogleContactStream::handleEntryWebsite);
+    mContactFunctionMap.insert("gContact:jot", &GoogleContactStream::handleEntryJot);
     mContactFunctionMap.insert("gd:comments", &GoogleContactStream::handleEntryComments);
     mContactFunctionMap.insert("gd:email", &GoogleContactStream::handleEntryEmail);
     mContactFunctionMap.insert("gd:im", &GoogleContactStream::handleEntryIm);
@@ -431,7 +514,7 @@ QContactDetail GoogleContactStream::handleEntryGender()
 {
     Q_ASSERT(mXmlReader->isStartElement() && mXmlReader->qualifiedName() == "gContact:gender");
 
-    QString genderStr = mXmlReader->attributes().value("value").toString().toLower();
+    const QString genderStr = mXmlReader->attributes().value("value").toString().toLower();
     QContactGender gender;
     if (genderStr.startsWith('m')) {
         gender.setGender(QContactGender::GenderMale);
@@ -478,6 +561,15 @@ QContactDetail GoogleContactStream::handleEntryWebsite()
     QContactUrl url;
     url.setUrl(mXmlReader->attributes().value("href").toString());
     return url;
+}
+
+QContactDetail GoogleContactStream::handleEntryJot()
+{
+    Q_ASSERT(mXmlReader->isStartElement() && mXmlReader->qualifiedName() == "gContact:jot");
+
+    QContactNote note;
+    note.setNote(mXmlReader->readElementText());
+    return note;
 }
 
 QContactDetail GoogleContactStream::handleEntryComments()
@@ -727,6 +819,7 @@ void GoogleContactStream::encodeContactUpdate(const QContact &qContact,
     }
     encodeUnknownElements(unsupportedElements); // for an Add, this is just group membership.
 
+    encodeNotes(qContact.details<QContactNote>());
     Q_FOREACH (const QContactDetail &detail, allDetails) {
         switch(detail.type()) {
             case QContactDetail::TypeName: {
@@ -748,7 +841,7 @@ void GoogleContactStream::encodeContactUpdate(const QContact &qContact,
                 encodeBirthday(detail);
             }   break;
             case QContactDetail::TypeNote: {
-                encodeNote(detail);
+                // ignore, already handled above.
             }   break;
             case QContactDetail::TypeHobby: {
                 encodeHobby(detail);
@@ -1024,12 +1117,30 @@ void GoogleContactStream::encodeBirthday(const QContactBirthday &birthday)
 }
 
 void
-GoogleContactStream::encodeNote(const QContactNote &note)
+GoogleContactStream::encodeNotes(const QList<QContactNote> &notes)
 {
-    if (!note.note().isEmpty()) {
-        mXmlWriter->writeStartElement("atom:content");
-        mXmlWriter->writeAttribute("type", "text");
-        mXmlWriter->writeCharacters(note.note());
+    // Google Contacts only shows the atom:content data
+    // in the UI as Notes, while other notes may be stored
+    // as gContact:jot fields but will not be shown in the UI.
+    // We cannot store the mapping in order to know which
+    // note should be stored to which field, so instead,
+    // we sort the notes alphabetically.
+    // The first note gets written to atom:content,
+    // subsequent notes get written to gContact:jot(s).
+
+    QStringList noteStrings;
+    for (const QContactNote &note : notes) {
+        if (!note.note().trimmed().isEmpty() && !noteStrings.contains(note.note())) {
+            noteStrings.append(note.note());
+        }
+    }
+    std::sort(noteStrings.begin(), noteStrings.end());
+
+    for (int i = 0; i < noteStrings.size(); ++i) {
+        mXmlWriter->writeStartElement(i == 0 ? QStringLiteral("atom:content") : QStringLiteral("gContact:jot"));
+        mXmlWriter->writeAttribute(i == 0 ? QStringLiteral("type") : QStringLiteral("rel"),
+                                   i == 0 ? QStringLiteral("text") : QStringLiteral("user"));
+        mXmlWriter->writeCharacters(noteStrings.at(i));
         mXmlWriter->writeEndElement();
     }
 }
