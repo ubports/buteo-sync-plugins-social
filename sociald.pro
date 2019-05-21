@@ -1,5 +1,9 @@
 TEMPLATE = subdirs
-SUBDIRS = src tests
-tests.depends = src
+SUBDIRS = src
+
+CONFIG(build-tests) {
+    SUBDIRS += tests
+    tests.depends = src
+}
 
 OTHER_FILES += rpm/sociald.spec
