@@ -1,0 +1,6 @@
+*.log
+*.substvars
+buteo-sync-plugins-contacts-google2/
+debhelper-build-stamp
+files
+tmp/

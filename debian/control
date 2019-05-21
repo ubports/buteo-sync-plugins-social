@@ -1,0 +1,24 @@
+Source: buteo-sync-plugins-social
+Section: libs
+Priority: optional
+Maintainer: Alberto Mardegan <mardy@users.sourceforge.net>
+Build-Depends: debhelper (>= 9),
+               pkg-config,
+               libaccounts-qt5-dev,
+               libbuteosyncfw5-dev (>= 0.8.5),
+               libsignon-qt5-dev,
+               qt5-default,
+               qtbase5-dev,
+               qtcontacts-sqlite-qt5-extension-dev,
+               qtpim5-dev,
+               signon-plugin-oauth2-dev,
+Standards-Version: 3.9.5
+Homepage: https://launchpad.net/buteo-sync-plugins-contacts
+
+Package: buteo-sync-plugins-contacts-google2
+Architecture: any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         buteo-syncfw,
+Description: Buteo contact sync plugin for Google
+ Buteo sync plugin for contacts, interfacing with Google
