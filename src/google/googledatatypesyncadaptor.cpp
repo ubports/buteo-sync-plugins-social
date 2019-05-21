@@ -28,8 +28,10 @@
 #include <QtCore/QString>
 #include <QtCore/QByteArray>
 
+#ifdef USE_SAILFISHKEYPROVIDER
 //libsailfishkeyprovider
 #include <sailfishkeyprovider.h>
+#endif
 
 // libaccounts-qt5
 #include <Accounts/Manager>
@@ -167,6 +169,7 @@ QString GoogleDataTypeSyncAdaptor::clientSecret()
 
 void GoogleDataTypeSyncAdaptor::loadClientIdAndSecret()
 {
+#ifdef USE_SAILFISHKEYPROVIDER
     m_triedLoading = true;
     char *cClientId = NULL;
     char *cClientSecret = NULL;
@@ -192,6 +195,7 @@ void GoogleDataTypeSyncAdaptor::loadClientIdAndSecret()
 
     m_clientSecret = QLatin1String(cClientSecret);
     free(cClientSecret);
+#endif
 }
 
 void GoogleDataTypeSyncAdaptor::setCredentialsNeedUpdate(Accounts::Account *account)
@@ -236,8 +240,10 @@ void GoogleDataTypeSyncAdaptor::signIn(Accounts::Account *account)
     }
 
     QVariantMap signonSessionData = accSrv.authData().parameters();
+#ifdef USE_SAILFISHKEYPROVIDER
     signonSessionData.insert("ClientId", clientId());
     signonSessionData.insert("ClientSecret", clientSecret());
+#endif
     signonSessionData.insert("UiPolicy", SignOn::NoUserInteractionPolicy);
 
     connect(session, SIGNAL(response(SignOn::SessionData)),
