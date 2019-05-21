@@ -15,6 +15,8 @@ QT += \
 QT -= \
     gui
 
+QMAKE_LFLAGS += $$QMAKE_LFLAGS_NOUNDEF
+
 # the unit tests need to provide a custom QNAM and uses a different database directory
 HEADERS += $$PWD/common/socialdnetworkaccessmanager_p.h
 !contains(DEFINES, 'SOCIALD_TEST_DEFINE') {
