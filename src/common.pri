@@ -1,12 +1,16 @@
 QMAKE_CXXFLAGS += -Werror
 CONFIG += link_pkgconfig
 PKGCONFIG += \
-    libsailfishkeyprovider \
     libsignon-qt5 \
     accounts-qt5 \
     buteosyncfw5 \
     socialcache
 LIBS += -lssu
+
+packagesExist(libsailfishkeyprovider) {
+    PKGCONFIG += libsailfishkeyprovider
+    DEFINES += USE_SAILFISHKEYPROVIDER
+}
 
 QT += \
     network \
