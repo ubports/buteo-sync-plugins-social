@@ -1,0 +1,25 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+export DPKG_GENSYMBOLS_CHECK_LEVEL=4
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export PKG_CONFIG_PATH:=$(PWD)/libsocialcache/pkgconfig:$(PKG_CONFIG_PATH) 
+
+override_dh_auto_configure:
+	cd libsocialcache && qmake ubports.pro && make
+	dh_auto_configure -- \
+		CONFIG+=google
+
+override_dh_install:
+	# Add account files
+	mkdir -p debian/buteo-sync-plugins-contacts-google2/usr/share/accounts/services/
+	cp data/ubports/account-services/* \
+		debian/buteo-sync-plugins-contacts-google2/usr/share/accounts/services/
+	# remove the tests
+	rm -rf debian/tmp/opt
+	dh_install --fail-missing
+
+%:
+	dh $@ --parallel --fail-missing 
