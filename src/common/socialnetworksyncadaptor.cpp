@@ -33,8 +33,6 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 
-#include <socialcache/socialimagesdatabase.h>
-
 #include "buteosyncfw_p.h"
 
 // libaccounts-qt5
@@ -43,7 +41,8 @@
 #include <Accounts/Service>
 
 // libsocialcache
-#include <socialnetworksyncdatabase.h>
+#include <socialcache/socialimagesdatabase.h>
+#include <socialcache/socialnetworksyncdatabase.h>
 
 namespace {
     QStringList validDataTypesInitialiser()
