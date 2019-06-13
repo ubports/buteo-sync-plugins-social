@@ -217,8 +217,8 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
 
     if (str.startsWith(';')) {
         str.remove(0,1);
-        if (str.startsWith("DATE-TIME:", Qt::CaseInsensitive)) {
-            str.remove(0, 10);
+        if (str.startsWith("VALUE=DATE-TIME:", Qt::CaseInsensitive)) {
+            str.remove(0, 16);
             QStringList dts = str.split(',');
             Q_FOREACH (const QString &dtstr, dts) {
                 if (dtstr.endsWith('Z')) {
@@ -233,15 +233,15 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
                     retn.append(kdt);
                 }
             }
-        } else if (str.startsWith("DATE:", Qt::CaseInsensitive)) {
-            str.remove(0, 5);
+        } else if (str.startsWith("VALUE=DATE:", Qt::CaseInsensitive)) {
+            str.remove(0, 11);
             QStringList dts = str.split(',');
             Q_FOREACH(const QString &dstr, dts) {
                 QDate date = QLocale::c().toDate(dstr, RFC5545_QDATE_FORMAT);
                 KDateTime kdt(date, KDateTime::Spec::ClockTime());
                 retn.append(kdt);
             }
-        } else if (str.startsWith("PERIOD:", Qt::CaseInsensitive)) {
+        } else if (str.startsWith("VALUE=PERIOD:", Qt::CaseInsensitive)) {
             SOCIALD_LOG_ERROR("unsupported parameter in ex/rdate string:" << exrdatestr);
             // TODO: support PERIOD formats, or just switch to CalDAV for Google sync...
         } else if (str.startsWith("TZID=") && str.contains(':')) {
