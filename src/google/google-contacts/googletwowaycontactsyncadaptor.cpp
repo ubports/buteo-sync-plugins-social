@@ -863,6 +863,7 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
         }
 
         QContactManager::Error error;
+#if 0 // FIXME TODO tmp
         if (d->m_engine->storeSyncContacts(SOCIALD_GOOGLE_CONTACTS_SYNCTARGET,
                                             QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
                                             &contactAvatarUpdates,
@@ -877,6 +878,7 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
             SOCIALD_LOG_ERROR("finalize: error adding avatars for" << contactAvatarUpdates.size() <<
                               "Google contacts from account" << accountId);
         }
+#endif
     }
 
     if (!storeSyncStateData(QString::number(accountId))) {
