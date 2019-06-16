@@ -862,8 +862,8 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
             }
         }
 
-        QContactManager::Error error;
 #if 0 // FIXME TODO tmp
+        QContactManager::Error error;
         if (d->m_engine->storeSyncContacts(SOCIALD_GOOGLE_CONTACTS_SYNCTARGET,
                                             QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
                                             &contactAvatarUpdates,
