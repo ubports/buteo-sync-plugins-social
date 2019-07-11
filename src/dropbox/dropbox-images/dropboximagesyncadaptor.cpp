@@ -227,7 +227,6 @@ void DropboxImageSyncAdaptor::queryCameraRoll(int accountId, const QString &acce
     QJsonObject requestParameters;
     if (continuationCursor.isEmpty()) {
         requestParameters.insert("path", "/Pictures");
-        requestParameters.insert("include_media_info", true);
         requestParameters.insert("include_deleted", false);
         requestParameters.insert("include_has_explicit_shared_members", false);
     } else {
@@ -284,8 +283,6 @@ void DropboxImageSyncAdaptor::cameraRollFinishedHandler()
     reply->deleteLater();
     removeReplyTimeout(accountId, reply);
 
-qWarning() << "Got replyData:" << replyData;
-
     bool ok = false;
     QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
 
@@ -332,12 +329,14 @@ qWarning() << "Got replyData:" << replyData;
             const QString &remoteFilePath = fileObject.value("path_display").toString();
             QString photoId = fileObject.value(QLatin1String("rev")).toString();
             QString photoName = remoteFilePath.split("/").last();
-            int imageWidth = fileObject.value(QLatin1String("media_info")).toObject().value(QLatin1String("dimensions")).toObject().value(QLatin1String("width")).toInt();
-            int imageHeight = fileObject.value(QLatin1String("media_info")).toObject().value(QLatin1String("dimensions")).toObject().value(QLatin1String("height")).toInt();
-            if (imageWidth == 0 || imageHeight == 0) {
-                imageWidth = 768;
-                imageHeight = 1024;
-            }
+
+            // Previously, we retrieved imageWidth and imageHeight via the media_info.
+            // Dropbox have deprecated that, so now the only way to get the information
+            // is via per-file get_metadata requests, which are prohibitively expensive.
+            // Instead, just define these placeholder values, as it turns out that the
+            // values are never used in practice.
+            int imageWidth = 1024;
+            int imageHeight = 768;
 
             QString createdTimeStr = fileObject.value(QLatin1String("client_modified")).toString();
             QDateTime createdTime = QDateTime::fromString(createdTimeStr, Qt::ISODate);

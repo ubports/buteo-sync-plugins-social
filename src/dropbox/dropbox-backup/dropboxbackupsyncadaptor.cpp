@@ -152,7 +152,6 @@ void DropboxBackupSyncAdaptor::requestList(int accountId,
     if (continuationCursor.isEmpty()) {
         requestParameters.insert("path", remotePath);
         requestParameters.insert("recursive", false);
-        requestParameters.insert("include_media_info", true);
         requestParameters.insert("include_deleted", false);
         requestParameters.insert("include_has_explicit_shared_members", false);
     } else {
