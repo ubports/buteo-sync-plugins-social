@@ -3,8 +3,8 @@ Summary:    Syncs device data from social services
 Version:    0.2.8
 Release:    1
 Group:      System/Libraries
-License:    LGPLv2.1
-URL:        https://bitbucket.org/jolla/base-sociald
+License:    LGPLv2
+URL:        https://git.sailfishos.org/mer-core/buteo-sync-plugins-social
 Source0:    %{name}-%{version}.tar.bz2
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5DBus)
@@ -29,17 +29,15 @@ A Buteo plugin which provides data synchronization with various social services.
 %files
 %defattr(-,root,root,-)
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/sociald-client
+%{_libdir}/buteo-plugins-qt5/oopp/sociald-client
 #in-process-plugin form:
 #/usr/lib/buteo-plugins-qt5/libsociald-client.so
 %config %{_sysconfdir}/buteo/profiles/client/sociald.xml
 %config %{_sysconfdir}/buteo/profiles/sync/sociald.All.xml
-
+%license COPYING
 
 %package facebook-calendars
 Summary:    Provides calendar synchronisation with Facebook
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(libmkcal-qt5)
 BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
@@ -65,8 +63,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package facebook-contacts
 Summary:    Provides contact synchronisation with Facebook
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
@@ -93,8 +89,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package facebook-images
 Summary:    Provides image synchronisation with Facebook
-License:    LGPLv2.1
-Group:      System/Libraries
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-images
@@ -118,8 +112,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package facebook-signon
 Summary:    Provides signon credentials refreshing with Facebook
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
@@ -145,8 +137,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-calendars
 Summary:    Provides calendar synchronisation with Google
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(libmkcal-qt5)
 BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
@@ -172,8 +162,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-contacts
 Summary:    Provides contact synchronisation with Google
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.1.58
@@ -200,8 +188,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-signon
 Summary:    Provides signon credentials refreshing with Google
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
@@ -227,8 +213,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package twitter-notifications
 Summary:    Provides notification synchronisation with Twitter
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
@@ -260,8 +244,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package twitter-posts
 Summary:    Provides post synchronisation with Twitter
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 BuildRequires:  qt5-qttools-linguist
@@ -289,8 +271,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package onedrive-signon
 Summary:    Provides signon credentials refreshing with OneDrive
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
@@ -315,8 +295,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package vk-posts
 Summary:    Provides post synchronisation with VK
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 BuildRequires:  qt5-qttools-linguist
@@ -344,8 +322,6 @@ systemctl-user restart msyncd.service || :
 
 %package dropbox-images
 Summary:    Provides image synchronisation with Dropbox
-License:    LGPLv2.1
-Group:      System/Libraries
 Requires: %{name} = %{version}-%{release}
 
 %description dropbox-images
@@ -368,8 +344,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package onedrive-images
 Summary:    Provides image synchronisation with OneDrive
-License:    LGPLv2.1
-Group:      System/Libraries
 Requires: %{name} = %{version}-%{release}
 
 %description onedrive-images
@@ -394,8 +368,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package onedrive-backup
 Summary:    Provides backup-blob synchronization for OneDrive
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
@@ -421,8 +393,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package dropbox-backup
 Summary:    Provides backup-blob synchronization for Dropbox
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
@@ -448,8 +418,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package vk-notifications
 Summary:    Provides notification synchronisation with VK
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
 BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
@@ -476,8 +444,6 @@ systemctl-user restart msyncd.service || :
 
 %package vk-calendars
 Summary:    Provides calendar synchronisation with VK
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(libmkcal-qt5)
 BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
@@ -503,8 +469,6 @@ systemctl-user restart msyncd.service || :
 
 %package vk-contacts
 Summary:    Provides contact synchronisation with VK
-License:    LGPLv2.1
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
@@ -531,8 +495,6 @@ systemctl-user restart msyncd.service || :
 
 %package vk-images
 Summary:    Provides image synchronisation with VK
-License:    LGPLv2.1
-Group:      System/Libraries
 Requires: %{name} = %{version}-%{release}
 
 %description vk-images
@@ -556,7 +518,6 @@ systemctl-user restart msyncd.service || :
 
 %package ts-devel
 Summary:    Translation source for sociald
-License:    LGPLv2.1
 Group:      System/Applications
 
 %description ts-devel
@@ -568,7 +529,6 @@ Translation source for sociald
 
 %package tests
 Summary:    Automatable tests for sociald
-License:    LGPLv2.1
 Group:      System/Applications
 BuildRequires:  pkgconfig(Qt5Test)
 Requires:   qt5-qtdeclarative-devel-tools
