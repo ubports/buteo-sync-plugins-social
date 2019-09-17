@@ -53,9 +53,12 @@ protected: // implementing DropboxDataTypeSyncAdaptor interface
     void finalCleanup();
 
 private:
-    void requestList(int accountId, const QString &accessToken,
-                     const QString &localPath, const QString &remotePath,
-                     const QString &remoteFile, const QString &continuationCursor);
+    void requestList(int accountId,
+                     const QString &accessToken,
+                     const QString &operationType,
+                     const QString &remotePath,
+                     const QString &continuationCursor,
+                     const QVariantMap &extraProperties);
     void requestData(int accountId, const QString &accessToken,
                      const QString &localPath, const QString &remotePath,
                      const QString &remoteFile = QString());
@@ -63,6 +66,9 @@ private:
                     const QString &localPath, const QString &remotePath,
                     const QString &localFile = QString());
     void purgeAccount(int accountId);
+
+    void beginListOperation(int accountId, const QString &accessToken, const QString &remotePath);
+    void beginSyncOperation(int accountId, const QString &accessToken, const QString &remotePath);
 
 private Q_SLOTS:
     void remotePathFinishedHandler();
