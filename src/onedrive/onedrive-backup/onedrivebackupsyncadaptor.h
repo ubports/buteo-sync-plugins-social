@@ -79,6 +79,10 @@ private Q_SLOTS:
     void uploadProgressHandler(qint64 bytesSent, qint64 bytesTotal);
 
 private:
+    void beginListOperation(int accountId, const QString &accessToken, const QString &remotePath);
+    void beginSyncOperation(int accountId, const QString &accessToken, const QString &remotePath);
+    void listOperationFinished();
+
     QString m_remoteAppDir;
 
     struct RemoteDirectory {

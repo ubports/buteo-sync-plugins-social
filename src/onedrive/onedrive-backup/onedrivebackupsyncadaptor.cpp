@@ -119,17 +119,176 @@ void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessTo
     if (!deviceDisplayNamePrefix.isEmpty()) {
         deviceDisplayNamePrefix = deviceDisplayNamePrefix.replace(' ', '-') + '_';
     }
-    QString defaultRemotePath = QString::fromLatin1("Backups/%1%2").arg(deviceDisplayNamePrefix).arg(encodedDeviceId);
-    QString defaultLocalPath = QString::fromLatin1("%1/Backups/")
-                               .arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
 
+    MGConfItem operationTypeConf("/SailfishOS/vault/OneDrive/operationType");
+    QString operationType = operationTypeConf.value(QString()).toString();
+
+    MGConfItem remotePathConf("/SailfishOS/vault/OneDrive/remotePath");
+    QString remotePath = remotePathConf.value(QString()).toString();
+    if (remotePath.isEmpty()) {
+        remotePath = QString::fromLatin1("Backups/%1%2").arg(deviceDisplayNamePrefix).arg(encodedDeviceId);
+    }
+
+    // Immediately unset the keys to ensure that future scheduled
+    // or manually triggered syncs fail, until the keys are set.
+    remotePathConf.set(QString());
+    operationTypeConf.set(QString());
+
+    if (operationType == QStringLiteral("list")) {
+        beginListOperation(accountId, accessToken, remotePath);
+    } else if (operationType == QStringLiteral("sync")) {
+        beginSyncOperation(accountId, accessToken, remotePath);
+    } else {
+        SOCIALD_LOG_ERROR("Unrecognized sync operation: " + operationType);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        return;
+    }
+}
+
+void OneDriveBackupSyncAdaptor::beginListOperation(int accountId, const QString &accessToken, const QString &remotePath)
+{
+    MGConfItem listResultLocalPathConf("/SailfishOS/vault/OneDrive/listResultLocalPath");
+    QString listResultPath = listResultLocalPathConf.value().toString();
+    if (listResultPath.isEmpty()) {
+        SOCIALD_LOG_ERROR("Cannot fetch directory listing, no local results file path set in" << listResultLocalPathConf.key());
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        return;
+    }
+
+    listResultLocalPathConf.set(QString());
+
+    QUrl url(QStringLiteral("https://api.onedrive.com/v1.0/drive/special/approot:/%1:/").arg(remotePath));
+    QUrlQuery query(url);
+    QList<QPair<QString, QString> > queryItems;
+    queryItems.append(QPair<QString, QString>(QStringLiteral("expand"), QStringLiteral("children")));
+    query.setQueryItems(queryItems);
+    url.setQuery(query);
+
+    QNetworkRequest req(url);
+    req.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
+                     QString(QLatin1String("Bearer ")).toUtf8() + accessToken.toUtf8());
+    QNetworkReply *reply = m_networkAccessManager->get(req);
+    if (reply) {
+        reply->setProperty("accountId", accountId);
+        reply->setProperty("accessToken", accessToken);
+        reply->setProperty("remotePath", remotePath);
+        reply->setProperty("listResultPath", listResultPath);
+        connect(reply, &QNetworkReply::finished, this, &OneDriveBackupSyncAdaptor::listOperationFinished);
+
+        // we're requesting data.  Increment the semaphore so that we know we're still busy.
+        incrementSemaphore(accountId);
+        setupReplyTimeout(accountId, reply, 10 * 60 * 1000); // 10 minutes
+    } else {
+        SOCIALD_LOG_ERROR("unable to start directory listing request for OneDrive account with id" << accountId);
+    }
+}
+
+void OneDriveBackupSyncAdaptor::listOperationFinished()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray data = reply->readAll();
+    int accountId = reply->property("accountId").toInt();
+    QString remotePath = reply->property("remotePath").toString();
+    int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    bool isError = reply->property("isError").toBool();
+    reply->deleteLater();
+    removeReplyTimeout(accountId, reply);
+
+    if (isError) {
+        // Show error but don't set error status until error code is checked more thoroughly.
+        SOCIALD_LOG_ERROR("error occurred when performing Backup remote path request for OneDrive account" << accountId);
+        debugDumpResponse(data);
+    }
+
+    QString listResultPath = reply->property("listResultPath").toString();
+    if (listResultPath.isEmpty()) {
+        SOCIALD_LOG_ERROR("Cannot save directory listing, no local results file path set");
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        decrementSemaphore(accountId);
+        return;
+    }
+
+    bool ok = false;
+    const QJsonObject parsed = parseJsonObjectReplyData(data, &ok);
+    const QJsonArray entries = parsed.value("children").toArray();
+
+    if (!ok || entries.isEmpty()) {
+        QString errorMessage = parsed.value("error").toString();
+        if (!errorMessage.isEmpty()) {
+            SOCIALD_LOG_ERROR("OneDrive returned error message:" << errorMessage);
+            errorMessage.clear();
+        }
+
+        // Directory may be not found or be empty if user has deleted backups. Only emit the error
+        // signal if parsing failed or there was an unexpected error code.
+        if (!ok) {
+            errorMessage = QStringLiteral("Failed to parse directory listing at %1 for account %2").arg(remotePath).arg(accountId);
+        } else if (httpCode != 200
+                   && httpCode != 404
+                   && httpCode != 410) {
+            errorMessage = QStringLiteral("Directory listing request at %1 for account %2 failed").arg(remotePath).arg(accountId);
+        }
+
+        if (errorMessage.isEmpty()) {
+            SOCIALD_LOG_DEBUG("Completed directory listing for account:" << accountId);
+        } else {
+            SOCIALD_LOG_ERROR(errorMessage);
+            setStatus(SocialNetworkSyncAdaptor::Error);
+            decrementSemaphore(accountId);
+            return;
+        }
+    }
+
+    if (entries.isEmpty()) {
+        SOCIALD_LOG_DEBUG("No entries found in dir listing, but not an error (e.g. maybe file was deleted on server)");
+        debugDumpResponse(data);
+    } else {
+        SOCIALD_LOG_DEBUG("Parsed dir listing entries:" << entries);
+    }
+
+    QStringList dirListing;
+    for (const QJsonValue &child : entries) {
+        const QString childName = child.toObject().value("name").toString();
+        if (child.toObject().keys().contains("folder")) {
+            SOCIALD_LOG_DEBUG("ignoring folder:" << childName << "under remote backup path:" << remotePath
+                              << "for account:" << accountId);
+        } else {
+            SOCIALD_LOG_DEBUG("found remote backup object:" << childName
+                              << "for account:" << accountId
+                              << "under remote backup path:" << remotePath);
+            dirListing.append(remotePath + '/' + childName);
+        }
+    }
+
+    QFile file(listResultPath);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        SOCIALD_LOG_ERROR("Cannot open" << file.fileName() << "to write directory listing results");
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        decrementSemaphore(accountId);
+        return;
+    }
+
+    const QByteArray dirListingBytes = dirListing.join('\n').toUtf8();
+    if (file.write(dirListingBytes) < 0) {
+        SOCIALD_LOG_ERROR("Cannot write directory listing results to" << file.fileName());
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        decrementSemaphore(accountId);
+        return;
+    }
+    file.close();
+    SOCIALD_LOG_DEBUG("Wrote directory listing to" << file.fileName());
+
+    decrementSemaphore(accountId);
+}
+
+
+void OneDriveBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &accessToken, const QString &remotePath)
+{
     // read from dconf some key values, which determine the direction of sync etc.
     MGConfItem localPathConf("/SailfishOS/vault/OneDrive/localPath");
-    MGConfItem remotePathConf("/SailfishOS/vault/OneDrive/remotePath");
     MGConfItem remoteFileConf("/SailfishOS/vault/OneDrive/remoteFile");
     MGConfItem directionConf("/SailfishOS/vault/OneDrive/direction");
     QString localPath = localPathConf.value(QString()).toString();
-    QString remotePath = remotePathConf.value(QString()).toString();
     QString remoteFile = remoteFileConf.value(QString()).toString();
     QString direction = directionConf.value(QString()).toString();
 
@@ -137,16 +296,12 @@ void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessTo
     // or manually triggered syncs fail, until the keys are set.
     // Specifically, the value of the direction key is important.
     localPathConf.set(QString());
-    remotePathConf.set(QString());
     remoteFileConf.set(QString());
     directionConf.set(QString());
 
     // set defaults if required.
     if (localPath.isEmpty()) {
-        localPath = defaultLocalPath;
-    }
-    if (remotePath.isEmpty()) {
-        remotePath = defaultRemotePath;
+        localPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
     }
 
     // create local directory if it doesn't exist
