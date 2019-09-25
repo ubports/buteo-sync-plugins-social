@@ -39,6 +39,10 @@
 #include <ksystemtimezone.h>
 #include <kdatetime.h>
 
+#include <Accounts/Account>
+#include <Accounts/Manager>
+#include <Accounts/Service>
+
 //----------------------------------------------
 
 #define RFC3339_FORMAT      "%Y-%m-%dT%H:%M:%S%:z"
@@ -944,6 +948,48 @@ void setLastSyncRequiresCleanSync(QList<int> accountIds)
     settingsFile.sync();
 }
 
+bool storeSyncTokens(Accounts::Manager *manager, int accountId, const QString &serviceName, const QMap<QString, QString> &calendarIdSyncTokens)
+{
+    Accounts::Account *account = Accounts::Account::fromId(manager, accountId, Q_NULLPTR);
+    if (!account) {
+        SOCIALD_LOG_ERROR("unable to load Google account" << accountId << "to store calendar sync tokens");
+        return false;
+    }
+
+    Accounts::Service srv(manager->service(serviceName));
+    account->selectService(srv);
+    account->beginGroup(QStringLiteral("syncTokens"));
+    Q_FOREACH (const QString &calendarId, calendarIdSyncTokens.keys()) {
+        account->setValue(calendarId, calendarIdSyncTokens.value(calendarId));
+    }
+    account->endGroup();
+    account->selectService(Accounts::Service());
+    if (account->syncAndBlock()) {
+        account->deleteLater();
+        return true;
+    } else {
+        account->deleteLater();
+        return false;
+    }
+}
+
+QString syncTokenForCalendar(Accounts::Manager *manager, int accountId, const QString &serviceName, const QString &calendarId)
+{
+    QString syncToken;
+    Accounts::Account *account = Accounts::Account::fromId(manager, accountId, Q_NULLPTR);
+    if (!account) {
+        SOCIALD_LOG_ERROR("unable to load Google account" << accountId << "to retrieve calendar sync tokens");
+    } else {
+        Accounts::Service srv(manager->service(serviceName));
+        account->selectService(srv);
+        account->beginGroup(QStringLiteral("syncTokens"));
+        syncToken = account->valueAsString(calendarId);
+        account->endGroup();
+        account->deleteLater();
+    }
+    return syncToken;
+}
+
 }
 
 GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
@@ -1018,6 +1064,9 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
                     m_storage->updateNotebook(notebook);
                     m_storageNeedsSave = true;
                 }
+                // and update the next sync token for each notebook.
+                // we have to store this out-of-band since mkcal doesn't support arbitrary metadata storage.
+                storeSyncTokens(m_accountManager, accountId, syncServiceName(), m_calendarsNextSyncTokens);
             }
         }
     }
@@ -1314,7 +1363,8 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebooks(int accountId, cons
     SOCIALD_LOG_DEBUG("Syncing calendar events for Google account: " << accountId << " CleanSync: " << needCleanSync);
 
     foreach (const QString &calendarId, calendars.keys()) {
-        requestEvents(accountId, accessToken, calendarId, needCleanSync);
+        const QString syncToken = needCleanSync ? QString() : syncTokenForCalendar(m_accountManager, accountId, syncServiceName(), calendarId);
+        requestEvents(accountId, accessToken, calendarId, syncToken);
         m_calendarsBeingRequested.append(calendarId);
     }
 
@@ -1326,47 +1376,41 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebooks(int accountId, cons
 }
 
 void GoogleCalendarSyncAdaptor::requestEvents(int accountId, const QString &accessToken, const QString &calendarId,
-                                              bool needCleanSync, const QString &pageToken)
+                                              const QString &syncToken, const QString &pageToken)
 {
     // get the last sync date stored into the notebook (if it exists).
-    QString updatedMin;
-    KDateTime syncDate;
+    // we need to perform a "clean" sync if we don't have a valid sync date
+    // or if we don't have a valid syncToken.
     mKCal::Notebook::Ptr notebook = notebookForCalendarId(accountId, calendarId);
-    if (notebook) {
-        syncDate = notebook->syncDate();
-    }
+    KDateTime syncDate = notebook ? notebook->syncDate() : KDateTime();
+    bool needCleanSync = syncToken.isEmpty() || syncDate.isNull() || !syncDate.isValid();
 
-    if (!needCleanSync && !syncDate.isNull() && syncDate.isValid()) {
-        // we will use an updated-min parameter to reduce the amount of data
-        // we request from Google.  Note that we do not want to limit it
-        // exactly to the syncDate, since we then would not receive enough
-        // remote events to determine correct delta from.  We want at least
-        // any modifications which also occurred during the PREVIOUS sync period.
-        updatedMin = syncDate.addDays(-7).toString();
+    if (!needCleanSync) {
         SOCIALD_LOG_DEBUG("Previous update timestamp for Google account:" << accountId <<
                           "Calendar Id:" << calendarId <<
-                          "- Timestamp:" << syncDate.toString());
-    } else if (needCleanSync) {
+                          "- Timestamp:" << syncDate.toString() <<
+                          "- SyncToken:" << syncToken);
+    } else if (syncDate.isValid() && syncToken.isEmpty()) {
         SOCIALD_LOG_DEBUG("Clean sync required for Google account:" << accountId <<
                           "Calendar Id:" << calendarId <<
                           "- Ignoring last sync timestamp:" << syncDate.toString());
     } else {
         SOCIALD_LOG_DEBUG("Invalid previous update timestamp for Google account:" << accountId <<
                           "Calendar Id:" << calendarId <<
-                          "- Timestamp:" << syncDate.toString());
+                          "- Timestamp:" << syncDate.toString() <<
+                          "- SyncToken:" << syncToken);
     }
 
     QList<QPair<QString, QString> > queryItems;
     queryItems.append(QPair<QString, QString>(QString::fromLatin1("key"), accessToken));
-    if (!needCleanSync && !updatedMin.isEmpty()) {
-        // we're doing a delta update.  We set the "updatedMin" and request deletions be shown.
-        queryItems.append(QPair<QString, QString>(QString::fromLatin1("showDeleted"), QString::fromLatin1("true")));
-        queryItems.append(QPair<QString, QString>(QString::fromLatin1("updatedMin"), updatedMin));
+    if (!needCleanSync) { // delta update request
+        queryItems.append(QPair<QString, QString>(QString::fromLatin1("syncToken"), syncToken));
+    } else { // clean sync request
+        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"),
+                                                  QDateTime::currentDateTimeUtc().addYears(-1).toString(Qt::ISODate)));
+        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMax"),
+                                                  QDateTime::currentDateTimeUtc().addYears(2).toString(Qt::ISODate)));
     }
-    queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"),
-                                              QDateTime::currentDateTimeUtc().addYears(-1).toString(Qt::ISODate)));
-    queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMax"),
-                                              QDateTime::currentDateTimeUtc().addYears(2).toString(Qt::ISODate)));
     if (!pageToken.isEmpty()) { // continuation request
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("pageToken"), pageToken));
     }
@@ -1390,7 +1434,7 @@ void GoogleCalendarSyncAdaptor::requestEvents(int accountId, const QString &acce
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
         reply->setProperty("calendarId", calendarId);
-        reply->setProperty("needCleanSync", needCleanSync);
+        reply->setProperty("syncToken", needCleanSync ? QString() : syncToken);
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)),
                 this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)),
@@ -1414,7 +1458,7 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
     int accountId = reply->property("accountId").toInt();
     QString calendarId = reply->property("calendarId").toString();
     QString accessToken = reply->property("accessToken").toString();
-    bool needCleanSync = reply->property("needCleanSync").toBool();
+    QString syncToken = reply->property("syncToken").toString();
     QByteArray replyData = reply->readAll();
     bool isError = reply->property("isError").toBool();
     int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -1435,21 +1479,24 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
     bool fetchingNextPage = false;
     bool ok = false;
     QString updated;
-    QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
+    QString nextSyncToken;
+    const QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
     if (!isError && ok) {
         // If there are more pages of results to fetch, ensure we fetch them
         if (parsed.find(QLatin1String("nextPageToken")) != parsed.end()
                 && !parsed.value(QLatin1String("nextPageToken")).toVariant().toString().isEmpty()) {
             fetchingNextPage = true;
-            requestEvents(accountId, accessToken, calendarId, needCleanSync,
+            requestEvents(accountId, accessToken, calendarId, syncToken,
                           parsed.value(QLatin1String("nextPageToken")).toVariant().toString());
         }
 
+        // Otherwise, if we get a new sync token, ensure we store that for next sync
+        nextSyncToken = parsed.value(QLatin1String("nextSyncToken")).toVariant().toString();
         updated = parsed.value(QLatin1String("updated")).toVariant().toString();
 
         // parse the default reminders data to find the default popup reminder start offset.
         if (parsed.find(QStringLiteral("defaultReminders")) != parsed.end()) {
-            QJsonArray defaultReminders = parsed.value(QStringLiteral("defaultReminders")).toArray();
+            const QJsonArray defaultReminders = parsed.value(QStringLiteral("defaultReminders")).toArray();
             for (int i = 0; i < defaultReminders.size(); ++i) {
                 QJsonObject defaultReminder = defaultReminders.at(i).toObject();
                 if (defaultReminder.value(QStringLiteral("method")).toString() == QStringLiteral("popup")) {
@@ -1459,7 +1506,7 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
         }
 
         // Parse the event list
-        QJsonArray dataList = parsed.value(QLatin1String("items")).toArray();
+        const QJsonArray dataList = parsed.value(QLatin1String("items")).toArray();
         foreach (const QJsonValue &item, dataList) {
             QJsonObject eventData = item.toObject();
 
@@ -1477,6 +1524,9 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
             // We should trigger a clean sync if we hit this error.
             SOCIALD_LOG_ERROR("received 410 GONE from server; marking account for clean sync:" << accountId);
             m_cleanSyncRequired[accountId] = true;
+            m_calendarsNextSyncTokens[calendarId] = QString();
+            const QMap<QString, QString> clearCalendarSyncToken { { calendarId, QString() } };
+            storeSyncTokens(m_accountManager, accountId, syncServiceName(), clearCalendarSyncToken);
         }
     }
 
@@ -1484,8 +1534,8 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
         // we've finished loading all pages of event information
         // we now need to process the loaded information to determine
         // which events need to be added/updated/removed locally.
-        QDateTime since = needCleanSync ? QDateTime() : m_prevSinceTimestamp[accountId];
-        finishedRequestingRemoteEvents(accountId, accessToken, calendarId, since, updated);
+        QDateTime since = syncToken.isEmpty() ? QDateTime() : m_prevSinceTimestamp[accountId];
+        finishedRequestingRemoteEvents(accountId, accessToken, calendarId, syncToken, nextSyncToken, since, updated);
         // note that the updated timestamp string will be empty in the error case,
         // however we only use the updated timestamp string if m_syncSucceeded is true.
     }
@@ -1508,11 +1558,14 @@ mKCal::Notebook::Ptr GoogleCalendarSyncAdaptor::notebookForCalendarId(int accoun
 }
 
 void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(int accountId, const QString &accessToken,
-                                                               const QString &calendarId, const QDateTime &since,
+                                                               const QString &calendarId, const QString &syncToken,
+                                                               const QString &nextSyncToken, const QDateTime &since,
                                                                const QString &updateTimestampStr)
 {
     m_calendarsBeingRequested.removeAll(calendarId);
     m_calendarsFinishedRequested.insert(calendarId, updateTimestampStr);
+    m_calendarsThisSyncTokens.insert(calendarId, syncToken);
+    m_calendarsNextSyncTokens.insert(calendarId, nextSyncToken);
     if (!m_calendarsBeingRequested.isEmpty()) {
         return; // still waiting for more requests to finish.
     }
@@ -1601,10 +1654,10 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
     QHash<QString, QString> upsyncedUidMapping;
     QSet<QString> partialUpsyncArtifactsNeedingUpdate; // set of gcalIds
     foreach (const QJsonObject &eventData, eventObjects) {
-        QString eventId = eventData.value(QLatin1String("id")).toVariant().toString();
-        QString upsyncedUid = eventData.value(QLatin1String("extendedProperties")).toObject()
-                                       .value(QLatin1String("private")).toObject()
-                                       .value("x-jolla-sociald-mkcal-uid").toVariant().toString();
+        const QString eventId = eventData.value(QLatin1String("id")).toVariant().toString();
+        const QString upsyncedUid = eventData.value(QLatin1String("extendedProperties")).toObject()
+                                             .value(QLatin1String("private")).toObject()
+                                             .value(QLatin1String("x-jolla-sociald-mkcal-uid")).toVariant().toString();
         if (!upsyncedUid.isEmpty() && !eventId.isEmpty()) {
             upsyncedUidMapping.insert(upsyncedUid, eventId);
         }
