@@ -6,6 +6,7 @@ PKGCONFIG += \
     accounts-qt5 \
     buteosyncfw5 \
     socialcache
+LIBS += -lssu
 
 QT += \
     network \
@@ -30,12 +31,14 @@ DEFINES += 'SOCIALD_SYNC_DATABASE_NAME=\'\"sociald.db\"\''
 INCLUDEPATH += . $$PWD/common/
 
 HEADERS += \
+    $$PWD/common/backuprestoreoptions_p.h \
     $$PWD/common/buteosyncfw_p.h \
     $$PWD/common/socialdbuteoplugin.h \
     $$PWD/common/socialnetworksyncadaptor.h \
     $$PWD/common/trace.h
 
 SOURCES += \
+    $$PWD/common/backuprestoreoptions.cpp \
     $$PWD/common/socialdbuteoplugin.cpp \
     $$PWD/common/socialnetworksyncadaptor.cpp
 

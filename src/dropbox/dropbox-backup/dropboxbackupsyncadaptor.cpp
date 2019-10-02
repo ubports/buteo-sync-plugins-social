@@ -1,7 +1,7 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jollamobile.com>
+ ** Copyright (C) 2015-2019 Jolla Ltd.
+ ** Copyright (C) 2019 Open Mobile Platform LLC
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -27,14 +27,13 @@
 #include <QtCore/QDir>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
-#include <QtCore/QCryptographicHash>
 
 #include <Accounts/Manager>
 #include <Accounts/Account>
 
-#include <MGConfItem>
-
-#include <ssudeviceinfo.h>
+// buteo
+#include <ProfileManager.h>
+#include <SyncProfile.h>
 
 static void debugDumpResponse(const QByteArray &data)
 {
@@ -44,14 +43,17 @@ static void debugDumpResponse(const QByteArray &data)
     }
 }
 
-DropboxBackupSyncAdaptor::DropboxBackupSyncAdaptor(QObject *parent)
+DropboxBackupSyncAdaptor::DropboxBackupSyncAdaptor(const QString &profileName, QObject *parent)
     : DropboxDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Backup, parent)
+    , m_profileManager(new Buteo::ProfileManager)
+    , m_profileName(profileName)
 {
     setInitialActive(true);
 }
 
 DropboxBackupSyncAdaptor::~DropboxBackupSyncAdaptor()
 {
+    delete m_profileManager;
 }
 
 QString DropboxBackupSyncAdaptor::syncServiceName() const
@@ -71,87 +73,74 @@ void DropboxBackupSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSy
 
 void DropboxBackupSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 {
-    SsuDeviceInfo deviceInfo;
-    QString deviceId = deviceInfo.deviceUid();
-    QByteArray hashedDeviceId = QCryptographicHash::hash(deviceId.toUtf8(), QCryptographicHash::Sha256);
-    QString encodedDeviceId = QString::fromUtf8(hashedDeviceId.toBase64(QByteArray::Base64UrlEncoding)).mid(0,12);
-    if (deviceId.isEmpty()) {
-        SOCIALD_LOG_ERROR("Could not determine device identifier; cannot create remote per-device backup directory!");
+    bool backupRestoreOptionsLoaded = false;
+    Buteo::SyncProfile *syncProfile = m_profileManager->syncProfile(m_profileName);
+    BackupRestoreOptions backupRestoreOptions =
+            BackupRestoreOptions::fromProfile(syncProfile, &backupRestoreOptionsLoaded);
+    if (!backupRestoreOptionsLoaded) {
+        SOCIALD_LOG_ERROR("Could not load backup/restore options for" << m_profileName);
         setStatus(SocialNetworkSyncAdaptor::Error);
         return;
     }
 
-    QString deviceDisplayNamePrefix = deviceInfo.displayName(Ssu::DeviceModel);
-    if (!deviceDisplayNamePrefix.isEmpty()) {
-        deviceDisplayNamePrefix = deviceDisplayNamePrefix.replace(' ', '-') + '_';
+    // Immediately unset the backup/restore to ensure that future scheduled
+    // or manually triggered syncs fail, until the options are set again.
+    BackupRestoreOptions emptyOptions;
+    if (!emptyOptions.copyToProfile(syncProfile)
+            || m_profileManager->updateProfile(*syncProfile).isEmpty()) {
+        SOCIALD_LOG_ERROR("Warning: failed to reset backup/restore options for profile: " + m_profileName);
     }
 
-    MGConfItem operationTypeConf("/SailfishOS/vault/Dropbox/operationType");
-    QString operationType = operationTypeConf.value(QString()).toString();
-
-    MGConfItem remotePathConf("/SailfishOS/vault/Dropbox/remotePath");
-    QString remotePath = remotePathConf.value(QString()).toString();
-    if (remotePath.isEmpty()) {
-        remotePath = QString::fromLatin1("/Backups/%1%2").arg(deviceDisplayNamePrefix).arg(encodedDeviceId);
+    if (backupRestoreOptions.remoteDirPath.isEmpty()) {
+        QString backupDeviceName = BackupRestoreOptions::backupDeviceName();
+        if (backupDeviceName.isEmpty()) {
+            SOCIALD_LOG_ERROR("backupDeviceName() returned empty string!");
+            setStatus(SocialNetworkSyncAdaptor::Error);
+            return;
+        }
+        backupRestoreOptions.remoteDirPath = QString::fromLatin1("/Backups/%1").arg(backupDeviceName);
     }
 
-    // Immediately unset the keys to ensure that future scheduled
-    // or manually triggered syncs fail, until the keys are set.
-    remotePathConf.set(QString());
-    operationTypeConf.set(QString());
-
-    if (operationType == QStringLiteral("list")) {
-        beginListOperation(accountId, accessToken, remotePath);
-    } else if (operationType == QStringLiteral("sync")) {
-        beginSyncOperation(accountId, accessToken, remotePath);
-    } else {
-        SOCIALD_LOG_ERROR("Unrecognized sync operation: " + operationType);
+    switch (backupRestoreOptions.operation) {
+    case BackupRestoreOptions::DirectoryListing:
+        beginListOperation(accountId, accessToken, backupRestoreOptions);
+        break;
+    case BackupRestoreOptions::Upload:
+    case BackupRestoreOptions::Download:
+        beginSyncOperation(accountId, accessToken, backupRestoreOptions);
+        break;
+    default:
+        SOCIALD_LOG_ERROR("Unrecognized sync operation: " + backupRestoreOptions.operation);
         setStatus(SocialNetworkSyncAdaptor::Error);
-        return;
+        break;
     }
 }
 
-void DropboxBackupSyncAdaptor::beginListOperation(int accountId, const QString &accessToken, const QString &remotePath)
+void DropboxBackupSyncAdaptor::beginListOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options)
 {
-    MGConfItem listResultLocalPathConf("/SailfishOS/vault/Dropbox/listResultLocalPath");
-    QString listResultPath = listResultLocalPathConf.value().toString();
-    if (listResultPath.isEmpty()) {
-        SOCIALD_LOG_ERROR("Cannot fetch directory listing, no local results file path set in" << listResultLocalPathConf.key());
+    if (options.localDirPath.isEmpty() || options.fileName.isEmpty()) {
+        SOCIALD_LOG_ERROR("Cannot fetch directory listing, no local results file path set!");
         setStatus(SocialNetworkSyncAdaptor::Error);
         return;
     }
 
-    listResultLocalPathConf.set(QString());
     QVariantMap properties = {
-        { QStringLiteral("listResultPath"), listResultPath },
+        { QStringLiteral("listResultPath"), options.localDirPath + '/' + options.fileName },
     };
-    requestList(accountId, accessToken, QStringLiteral("list"), remotePath, QString(), properties);
+    requestList(accountId, accessToken, options.operation, options.remoteDirPath, QString(), properties);
 }
 
-void DropboxBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &accessToken, const QString &remotePath)
+void DropboxBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options)
 {
-    // read from dconf some key values, which determine the direction of sync etc.
-    MGConfItem localPathConf("/SailfishOS/vault/Dropbox/localPath");
-    MGConfItem remoteFileConf("/SailfishOS/vault/Dropbox/remoteFile");
-    MGConfItem directionConf("/SailfishOS/vault/Dropbox/direction");
-    QString localPath = localPathConf.value(QString()).toString();
-    QString remoteFile = remoteFileConf.value(QString()).toString();
-    QString direction = directionConf.value(QString()).toString();
-
-    // Immediately unset the keys to ensure that future scheduled
-    // or manually triggered syncs fail, until the keys are set.
-    // Specifically, the value of the direction key is important.
-    localPathConf.set(QString());
-    remoteFileConf.set(QString());
-    directionConf.set(QString());
-
     // set defaults if required.
+    QString localPath = options.localDirPath;
     if (localPath.isEmpty()) {
         localPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
     }
+    QString remoteFile = options.fileName;
     if (!remoteFile.isEmpty()) {
         // dropbox requestData() function takes remoteFile param which has a fully specified path.
-        remoteFile = QStringLiteral("%1/%2").arg(remotePath).arg(remoteFile);
+        remoteFile = QStringLiteral("%1/%2").arg(options.remoteDirPath).arg(remoteFile);
     }
 
     // create local directory if it doesn't exist
@@ -163,16 +152,16 @@ void DropboxBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &
     }
 
     // either upsync or downsync as required.
-    if (direction == Buteo::VALUE_TO_REMOTE) {
-        uploadData(accountId, accessToken, localPath, remotePath);
-    } else if (direction == Buteo::VALUE_FROM_REMOTE) {
+    if (options.operation == BackupRestoreOptions::Upload) {
+        uploadData(accountId, accessToken, localPath, options.remoteDirPath);
+    } else if (options.operation == BackupRestoreOptions::Download) {
         // step one: get the remote path and its children metadata.
         // step two: for each (non-folder) child in metadata, download it.
         QVariantMap properties = {
             { QStringLiteral("localPath"), localPath },
             { QStringLiteral("remoteFile"), remoteFile },
         };
-        requestList(accountId, accessToken, QStringLiteral("sync"), remotePath, QString(), properties);
+        requestList(accountId, accessToken, options.operation, options.remoteDirPath, QString(), properties);
     } else {
         SOCIALD_LOG_ERROR("No direction set for Dropbox Backup sync with account:" << accountId);
         setStatus(SocialNetworkSyncAdaptor::Error);
@@ -182,7 +171,7 @@ void DropboxBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &
 
 void DropboxBackupSyncAdaptor::requestList(int accountId,
                                            const QString &accessToken,
-                                           const QString &operationType,
+                                           int operationType,
                                            const QString &remotePath,
                                            const QString &continuationCursor,
                                            const QVariantMap &extraProperties)
@@ -245,7 +234,7 @@ void DropboxBackupSyncAdaptor::remotePathFinishedHandler()
     QByteArray data = reply->readAll();
     int accountId = reply->property("accountId").toInt();
     QString accessToken = reply->property("accessToken").toString();
-    QString operationType = reply->property("operationType").toString();
+    int operationType = reply->property("operationType").toInt();
     QString remotePath = reply->property("remotePath").toString();
     int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     bool isError = reply->property("isError").toBool();
@@ -311,7 +300,9 @@ void DropboxBackupSyncAdaptor::remotePathFinishedHandler()
         SOCIALD_LOG_DEBUG("Parsed dir listing entries:" << entries);
     }
 
-    if (operationType == QStringLiteral("list")) {
+    switch (operationType) {
+    case BackupRestoreOptions::DirectoryListing:
+    {
         QString listResultPath = reply->property("listResultPath").toString();
         if (listResultPath.isEmpty()) {
             SOCIALD_LOG_ERROR("Cannot save directory listing, no local results file path set");
@@ -343,7 +334,11 @@ void DropboxBackupSyncAdaptor::remotePathFinishedHandler()
             file.close();
             SOCIALD_LOG_DEBUG("Wrote directory listing to" << file.fileName());
         }
-    } else if (operationType == QStringLiteral("sync")) {
+        break;
+    }
+    case BackupRestoreOptions::Upload:
+    case BackupRestoreOptions::Download:
+    {
         QString localPath = reply->property("localPath").toString();
         QString remoteFile = reply->property("remoteFile").toString();
         if (hasMore) {
@@ -357,8 +352,10 @@ void DropboxBackupSyncAdaptor::remotePathFinishedHandler()
                 requestData(accountId, accessToken, localPath, remotePath, *it);
             }
         }
-    } else {
-        SOCIALD_LOG_ERROR("Unrecognized sync operation: " + operationType);
+        break;
+    }
+    default:
+        SOCIALD_LOG_ERROR("Unrecognized sync operation: " << operationType);
         setStatus(SocialNetworkSyncAdaptor::Error);
         decrementSemaphore(accountId);
         return;
