@@ -83,7 +83,7 @@ private:
     void requestCalendars(int accountId, const QString &accessToken,
                           bool needCleanSync, const QString &pageToken = QString());
     void requestEvents(int accountId, const QString &accessToken,
-                       const QString &calendarId, bool needCleanSync,
+                       const QString &calendarId, const QString &syncToken,
                        const QString &pageToken = QString());
     void updateLocalCalendarNotebooks(int accountId, const QString &accessToken, bool needCleanSync);
     QList<UpsyncChange> determineSyncDelta(int accountId, const QString &accessToken,
@@ -97,7 +97,10 @@ private:
     void updateLocalCalendarNotebookEvents(int accountId, const QString &calendarId);
 
     mKCal::Notebook::Ptr notebookForCalendarId(int accountId, const QString &calendarId) const;
-    void finishedRequestingRemoteEvents(int accountId, const QString &accessToken, const QString &calendarId, const QDateTime &since, const QString &updateTimestampStr);
+    void finishedRequestingRemoteEvents(int accountId, const QString &accessToken,
+                                        const QString &calendarId, const QString &syncToken,
+                                        const QString &nextSyncToken, const QDateTime &since,
+                                        const QString &updateTimestampStr);
 
 private Q_SLOTS:
     void calendarsFinishedHandler();
@@ -124,6 +127,8 @@ private:
 
     QStringList m_calendarsBeingRequested;               // calendarIds
     QMap<QString, QString> m_calendarsFinishedRequested; // calendarId to updated timestamp string
+    QMap<QString, QString> m_calendarsThisSyncTokens;    // calendarId to sync token used during this sync cycle
+    QMap<QString, QString> m_calendarsNextSyncTokens;    // calendarId to sync token to use during next sync cycle
     QMultiMap<QString, QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > m_changesFromDownsync; // calendarId to change
     QMultiMap<QString, QPair<KCalCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
 
