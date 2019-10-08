@@ -1,7 +1,7 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jollamobile.com>
+ ** Copyright (C) 2015-2019 Jolla Ltd.
+ ** Copyright (C) 2019 Open Mobile Platform LLC
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,6 +23,7 @@
 #define ONEDRIVEBACKUPSYNCADAPTOR_H
 
 #include "onedrivedatatypesyncadaptor.h"
+#include "backuprestoreoptions_p.h"
 
 #include <QtCore/QObject>
 #include <QtCore/QString>
@@ -35,12 +36,16 @@
 #include <QtNetwork/QSslError>
 #include <QtSql/QSqlDatabase>
 
+namespace Buteo {
+    class ProfileManager;
+}
+
 class OneDriveBackupSyncAdaptor : public OneDriveDataTypeSyncAdaptor
 {
     Q_OBJECT
 
 public:
-    OneDriveBackupSyncAdaptor(QObject *parent);
+    OneDriveBackupSyncAdaptor(const QString &profileName, QObject *parent);
     ~OneDriveBackupSyncAdaptor();
 
     QString syncServiceName() const;
@@ -79,10 +84,13 @@ private Q_SLOTS:
     void uploadProgressHandler(qint64 bytesSent, qint64 bytesTotal);
 
 private:
-    void beginListOperation(int accountId, const QString &accessToken, const QString &remotePath);
-    void beginSyncOperation(int accountId, const QString &accessToken, const QString &remotePath);
+    void beginListOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options);
+    void beginSyncOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options);
     void listOperationFinished();
 
+    Buteo::ProfileManager *m_profileManager;
+
+    QString m_profileName;
     QString m_remoteAppDir;
 
     struct RemoteDirectory {

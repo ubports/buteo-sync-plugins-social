@@ -1,6 +1,7 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
+ ** Copyright (C) 2015-2019 Jolla Ltd.
+ ** Copyright (C) 2019 Open Mobile Platform LLC
  ** Contact: Chris Adams <chris.adams@jolla.com>
  **
  ** This program/library is free software; you can redistribute it and/or
@@ -50,5 +51,5 @@ DropboxBackupPlugin::~DropboxBackupPlugin()
 
 SocialNetworkSyncAdaptor *DropboxBackupPlugin::createSocialNetworkSyncAdaptor()
 {
-    return new DropboxBackupSyncAdaptor(this);
+    return new DropboxBackupSyncAdaptor(profile().name(), this);
 }

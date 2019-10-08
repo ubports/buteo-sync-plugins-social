@@ -1,7 +1,7 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jollamobile.com>
+ ** Copyright (C) 2015-2019 Jolla Ltd.
+ ** Copyright (C) 2019 Open Mobile Platform LLC
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -32,9 +32,9 @@
 #include <Accounts/Manager>
 #include <Accounts/Account>
 
-#include <MGConfItem>
-
-#include <ssudeviceinfo.h>
+// buteo
+#include <ProfileManager.h>
+#include <SyncProfile.h>
 
 static void debugDumpResponse(const QByteArray &data)
 {
@@ -77,8 +77,10 @@ static void debugDumpJsonResponse(const QByteArray &data)
     debugDumpResponse(output.toUtf8());
 }
 
-OneDriveBackupSyncAdaptor::OneDriveBackupSyncAdaptor(QObject *parent)
+OneDriveBackupSyncAdaptor::OneDriveBackupSyncAdaptor(const QString &profileName, QObject *parent)
     : OneDriveDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Backup, parent)
+    , m_profileManager(new Buteo::ProfileManager)
+    , m_profileName(profileName)
     , m_remoteAppDir(QStringLiteral("drive/special/approot"))
 {
     setInitialActive(true);
@@ -86,6 +88,7 @@ OneDriveBackupSyncAdaptor::OneDriveBackupSyncAdaptor(QObject *parent)
 
 OneDriveBackupSyncAdaptor::~OneDriveBackupSyncAdaptor()
 {
+    delete m_profileManager;
 }
 
 QString OneDriveBackupSyncAdaptor::syncServiceName() const
@@ -105,59 +108,58 @@ void OneDriveBackupSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkS
 
 void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 {
-    SsuDeviceInfo deviceInfo;
-    QString deviceId = deviceInfo.deviceUid();
-    QByteArray hashedDeviceId = QCryptographicHash::hash(deviceId.toUtf8(), QCryptographicHash::Sha256);
-    QString encodedDeviceId = QString::fromUtf8(hashedDeviceId.toBase64(QByteArray::Base64UrlEncoding)).mid(0,12);
-    if (deviceId.isEmpty()) {
-        SOCIALD_LOG_ERROR("Could not determine device identifier; cannot create remote per-device backup directory!");
+    bool backupRestoreOptionsLoaded = false;
+    Buteo::SyncProfile *syncProfile = m_profileManager->syncProfile(m_profileName);
+    BackupRestoreOptions backupRestoreOptions =
+            BackupRestoreOptions::fromProfile(syncProfile, &backupRestoreOptionsLoaded);
+    if (!backupRestoreOptionsLoaded) {
+        SOCIALD_LOG_ERROR("Could not load backup/restore options for" << m_profileName);
         setStatus(SocialNetworkSyncAdaptor::Error);
         return;
     }
 
-    QString deviceDisplayNamePrefix = deviceInfo.displayName(Ssu::DeviceModel);
-    if (!deviceDisplayNamePrefix.isEmpty()) {
-        deviceDisplayNamePrefix = deviceDisplayNamePrefix.replace(' ', '-') + '_';
+    // Immediately unset the backup/restore to ensure that future scheduled
+    // or manually triggered syncs fail, until the options are set again.
+    BackupRestoreOptions emptyOptions;
+    if (!emptyOptions.copyToProfile(syncProfile)
+            || m_profileManager->updateProfile(*syncProfile).isEmpty()) {
+        SOCIALD_LOG_ERROR("Warning: failed to reset backup/restore options for profile: " + m_profileName);
     }
 
-    MGConfItem operationTypeConf("/SailfishOS/vault/OneDrive/operationType");
-    QString operationType = operationTypeConf.value(QString()).toString();
-
-    MGConfItem remotePathConf("/SailfishOS/vault/OneDrive/remotePath");
-    QString remotePath = remotePathConf.value(QString()).toString();
-    if (remotePath.isEmpty()) {
-        remotePath = QString::fromLatin1("Backups/%1%2").arg(deviceDisplayNamePrefix).arg(encodedDeviceId);
+    if (backupRestoreOptions.remoteDirPath.isEmpty()) {
+        QString backupDeviceName = BackupRestoreOptions::backupDeviceName();
+        if (backupDeviceName.isEmpty()) {
+            SOCIALD_LOG_ERROR("backupDeviceName() returned empty string!");
+            setStatus(SocialNetworkSyncAdaptor::Error);
+            return;
+        }
+        backupRestoreOptions.remoteDirPath = "Backups/" + backupDeviceName;
     }
 
-    // Immediately unset the keys to ensure that future scheduled
-    // or manually triggered syncs fail, until the keys are set.
-    remotePathConf.set(QString());
-    operationTypeConf.set(QString());
-
-    if (operationType == QStringLiteral("list")) {
-        beginListOperation(accountId, accessToken, remotePath);
-    } else if (operationType == QStringLiteral("sync")) {
-        beginSyncOperation(accountId, accessToken, remotePath);
-    } else {
-        SOCIALD_LOG_ERROR("Unrecognized sync operation: " + operationType);
+    switch (backupRestoreOptions.operation) {
+    case BackupRestoreOptions::DirectoryListing:
+        beginListOperation(accountId, accessToken, backupRestoreOptions);
+        break;
+    case BackupRestoreOptions::Upload:
+    case BackupRestoreOptions::Download:
+        beginSyncOperation(accountId, accessToken, backupRestoreOptions);
+        break;
+    default:
+        SOCIALD_LOG_ERROR("Unrecognized sync operation: " + backupRestoreOptions.operation);
         setStatus(SocialNetworkSyncAdaptor::Error);
-        return;
+        break;
     }
 }
 
-void OneDriveBackupSyncAdaptor::beginListOperation(int accountId, const QString &accessToken, const QString &remotePath)
+void OneDriveBackupSyncAdaptor::beginListOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options)
 {
-    MGConfItem listResultLocalPathConf("/SailfishOS/vault/OneDrive/listResultLocalPath");
-    QString listResultPath = listResultLocalPathConf.value().toString();
-    if (listResultPath.isEmpty()) {
-        SOCIALD_LOG_ERROR("Cannot fetch directory listing, no local results file path set in" << listResultLocalPathConf.key());
+    if (options.localDirPath.isEmpty() || options.fileName.isEmpty()) {
+        SOCIALD_LOG_ERROR("Cannot fetch directory listing, no local results file path set");
         setStatus(SocialNetworkSyncAdaptor::Error);
         return;
     }
 
-    listResultLocalPathConf.set(QString());
-
-    QUrl url(QStringLiteral("https://api.onedrive.com/v1.0/drive/special/approot:/%1:/").arg(remotePath));
+    QUrl url(QStringLiteral("https://api.onedrive.com/v1.0/drive/special/approot:/%1:/").arg(options.remoteDirPath));
     QUrlQuery query(url);
     QList<QPair<QString, QString> > queryItems;
     queryItems.append(QPair<QString, QString>(QStringLiteral("expand"), QStringLiteral("children")));
@@ -171,8 +173,8 @@ void OneDriveBackupSyncAdaptor::beginListOperation(int accountId, const QString 
     if (reply) {
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
-        reply->setProperty("remotePath", remotePath);
-        reply->setProperty("listResultPath", listResultPath);
+        reply->setProperty("remotePath", options.remoteDirPath);
+        reply->setProperty("listResultPath", options.localDirPath + '/' + options.fileName);
         connect(reply, &QNetworkReply::finished, this, &OneDriveBackupSyncAdaptor::listOperationFinished);
 
         // we're requesting data.  Increment the semaphore so that we know we're still busy.
@@ -188,6 +190,7 @@ void OneDriveBackupSyncAdaptor::listOperationFinished()
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
     QByteArray data = reply->readAll();
     int accountId = reply->property("accountId").toInt();
+    QString listResultPath = reply->property("listResultPath").toString();
     QString remotePath = reply->property("remotePath").toString();
     int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     bool isError = reply->property("isError").toBool();
@@ -198,14 +201,6 @@ void OneDriveBackupSyncAdaptor::listOperationFinished()
         // Show error but don't set error status until error code is checked more thoroughly.
         SOCIALD_LOG_ERROR("error occurred when performing Backup remote path request for OneDrive account" << accountId);
         debugDumpResponse(data);
-    }
-
-    QString listResultPath = reply->property("listResultPath").toString();
-    if (listResultPath.isEmpty()) {
-        SOCIALD_LOG_ERROR("Cannot save directory listing, no local results file path set");
-        setStatus(SocialNetworkSyncAdaptor::Error);
-        decrementSemaphore(accountId);
-        return;
     }
 
     bool ok = false;
@@ -282,24 +277,19 @@ void OneDriveBackupSyncAdaptor::listOperationFinished()
 }
 
 
-void OneDriveBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &accessToken, const QString &remotePath)
+void OneDriveBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options)
 {
-    // read from dconf some key values, which determine the direction of sync etc.
-    MGConfItem localPathConf("/SailfishOS/vault/OneDrive/localPath");
-    MGConfItem remoteFileConf("/SailfishOS/vault/OneDrive/remoteFile");
-    MGConfItem directionConf("/SailfishOS/vault/OneDrive/direction");
-    QString localPath = localPathConf.value(QString()).toString();
-    QString remoteFile = remoteFileConf.value(QString()).toString();
-    QString direction = directionConf.value(QString()).toString();
-
-    // Immediately unset the keys to ensure that future scheduled
-    // or manually triggered syncs fail, until the keys are set.
-    // Specifically, the value of the direction key is important.
-    localPathConf.set(QString());
-    remoteFileConf.set(QString());
-    directionConf.set(QString());
+    QString direction = options.operation == BackupRestoreOptions::Upload
+            ? Buteo::VALUE_TO_REMOTE
+            : (options.operation == BackupRestoreOptions::Download ? Buteo::VALUE_FROM_REMOTE : QString());
+    if (direction.isEmpty()) {
+        SOCIALD_LOG_ERROR("Invalid sync operation" << options.operation << "for OneDrive account:" << accountId);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        return;
+    }
 
     // set defaults if required.
+    QString localPath = options.localDirPath;
     if (localPath.isEmpty()) {
         localPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
     }
@@ -315,7 +305,7 @@ void OneDriveBackupSyncAdaptor::beginSyncOperation(int accountId, const QString 
     // either upsync or downsync as required.
     if (direction == Buteo::VALUE_TO_REMOTE || direction == Buteo::VALUE_FROM_REMOTE) {
         // Perform an initial app folder request before upload/download.
-        initialiseAppFolderRequest(accountId, accessToken, localPath, remotePath, remoteFile, direction);
+        initialiseAppFolderRequest(accountId, accessToken, localPath, options.remoteDirPath, options.fileName, direction);
     } else {
         SOCIALD_LOG_ERROR("No direction set for OneDrive Backup sync with account:" << accountId);
         setStatus(SocialNetworkSyncAdaptor::Error);
