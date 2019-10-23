@@ -91,6 +91,19 @@ void DropboxBackupSyncAdaptor::beginSync(int accountId, const QString &accessTok
         SOCIALD_LOG_ERROR("Warning: failed to reset backup/restore options for profile: " + m_profileName);
     }
 
+    if (backupRestoreOptions.localDirPath.isEmpty()) {
+        backupRestoreOptions.localDirPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
+    }
+    // create local directory if it doesn't exist
+    QDir localDir;
+    if (!localDir.mkpath(backupRestoreOptions.localDirPath)) {
+        SOCIALD_LOG_ERROR("Could not create local backup directory:"
+                          << backupRestoreOptions.localDirPath
+                          << "for Dropbox account:" << accountId);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        return;
+    }
+
     if (backupRestoreOptions.remoteDirPath.isEmpty()) {
         QString backupDeviceName = BackupRestoreOptions::backupDeviceName();
         if (backupDeviceName.isEmpty()) {
@@ -132,33 +145,20 @@ void DropboxBackupSyncAdaptor::beginListOperation(int accountId, const QString &
 
 void DropboxBackupSyncAdaptor::beginSyncOperation(int accountId, const QString &accessToken, const BackupRestoreOptions &options)
 {
-    // set defaults if required.
-    QString localPath = options.localDirPath;
-    if (localPath.isEmpty()) {
-        localPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
-    }
     QString remoteFile = options.fileName;
     if (!remoteFile.isEmpty()) {
         // dropbox requestData() function takes remoteFile param which has a fully specified path.
         remoteFile = QStringLiteral("%1/%2").arg(options.remoteDirPath).arg(remoteFile);
     }
 
-    // create local directory if it doesn't exist
-    QDir localDir;
-    if (!localDir.mkpath(localPath)) {
-        SOCIALD_LOG_ERROR("Could not create local backup directory:" << localPath << "for Dropbox account:" << accountId);
-        setStatus(SocialNetworkSyncAdaptor::Error);
-        return;
-    }
-
     // either upsync or downsync as required.
     if (options.operation == BackupRestoreOptions::Upload) {
-        uploadData(accountId, accessToken, localPath, options.remoteDirPath);
+        uploadData(accountId, accessToken, options.localDirPath, options.remoteDirPath);
     } else if (options.operation == BackupRestoreOptions::Download) {
         // step one: get the remote path and its children metadata.
         // step two: for each (non-folder) child in metadata, download it.
         QVariantMap properties = {
-            { QStringLiteral("localPath"), localPath },
+            { QStringLiteral("localPath"), options.localDirPath },
             { QStringLiteral("remoteFile"), remoteFile },
         };
         requestList(accountId, accessToken, options.operation, options.remoteDirPath, QString(), properties);
