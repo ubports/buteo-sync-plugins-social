@@ -126,6 +126,19 @@ void OneDriveBackupSyncAdaptor::beginSync(int accountId, const QString &accessTo
         SOCIALD_LOG_ERROR("Warning: failed to reset backup/restore options for profile: " + m_profileName);
     }
 
+    if (backupRestoreOptions.localDirPath.isEmpty()) {
+        backupRestoreOptions.localDirPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
+    }
+    // create local directory if it doesn't exist
+    QDir localDir;
+    if (!localDir.mkpath(backupRestoreOptions.localDirPath)) {
+        SOCIALD_LOG_ERROR("Could not create local backup directory:"
+                          << backupRestoreOptions.localDirPath
+                          << "for OneDrive account:" << accountId);
+        setStatus(SocialNetworkSyncAdaptor::Error);
+        return;
+    }
+
     if (backupRestoreOptions.remoteDirPath.isEmpty()) {
         QString backupDeviceName = BackupRestoreOptions::backupDeviceName();
         if (backupDeviceName.isEmpty()) {
@@ -288,24 +301,10 @@ void OneDriveBackupSyncAdaptor::beginSyncOperation(int accountId, const QString 
         return;
     }
 
-    // set defaults if required.
-    QString localPath = options.localDirPath;
-    if (localPath.isEmpty()) {
-        localPath = QString::fromLatin1("%1/Backups/").arg(QString::fromLatin1(PRIVILEGED_DATA_DIR));
-    }
-
-    // create local directory if it doesn't exist
-    QDir localDir;
-    if (!localDir.mkpath(localPath)) {
-        SOCIALD_LOG_ERROR("Could not create local backup directory:" << localPath << "for OneDrive account:" << accountId);
-        setStatus(SocialNetworkSyncAdaptor::Error);
-        return;
-    }
-
     // either upsync or downsync as required.
     if (direction == Buteo::VALUE_TO_REMOTE || direction == Buteo::VALUE_FROM_REMOTE) {
         // Perform an initial app folder request before upload/download.
-        initialiseAppFolderRequest(accountId, accessToken, localPath, options.remoteDirPath, options.fileName, direction);
+        initialiseAppFolderRequest(accountId, accessToken, options.localDirPath, options.remoteDirPath, options.fileName, direction);
     } else {
         SOCIALD_LOG_ERROR("No direction set for OneDrive Backup sync with account:" << accountId);
         setStatus(SocialNetworkSyncAdaptor::Error);
