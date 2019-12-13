@@ -164,7 +164,6 @@ void OneDriveSignonSyncAdaptor::refreshTokens(int accountId)
 
     QVariantMap signonSessionData = accSrv->authData().parameters();
     signonSessionData.insert("ClientId", clientId());
-    signonSessionData.insert("ClientSecret", clientSecret());
     signonSessionData.insert("UiPolicy", SignOn::NoUserInteractionPolicy);
 
     connect(session, SIGNAL(response(SignOn::SessionData)),

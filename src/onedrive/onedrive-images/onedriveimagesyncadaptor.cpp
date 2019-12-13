@@ -35,14 +35,14 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 
-#include <MGConfItem>
-
 OneDriveImageSyncAdaptor::AlbumData::AlbumData()
 {
 }
 
-OneDriveImageSyncAdaptor::AlbumData::AlbumData(QString albumId, QString userId, QDateTime createdTime,
-                                               QDateTime updatedTime, QString albumName, int imageCount)
+OneDriveImageSyncAdaptor::AlbumData::AlbumData(
+        const QString &albumId, const QString &userId,
+        const QDateTime &createdTime, const QDateTime &updatedTime,
+        const QString &albumName, int imageCount)
     : albumId(albumId), userId(userId), createdTime(createdTime)
     , updatedTime(updatedTime), albumName(albumName), imageCount(imageCount)
 {
@@ -58,6 +58,40 @@ OneDriveImageSyncAdaptor::AlbumData::AlbumData(const AlbumData &other)
     imageCount = other.imageCount;
 }
 
+OneDriveImageSyncAdaptor::ImageData::ImageData()
+    : imageWidth(0), imageHeight(0)
+{
+}
+
+OneDriveImageSyncAdaptor::ImageData::ImageData(
+        const QString &photoId, const QString &albumId, const QString &userId,
+        const QDateTime &createdTime, const QDateTime &updatedTime,
+        const QString &photoName, int imageWidth, int imageHeight,
+        const QString &thumbnailUrl, const QString &imageSourceUrl,
+        const QString &description)
+    : photoId(photoId), albumId(albumId), userId(userId)
+    , createdTime(createdTime), updatedTime(updatedTime), photoName(photoName)
+    , imageWidth(imageWidth), imageHeight(imageHeight)
+    , thumbnailUrl(thumbnailUrl), imageSourceUrl(imageSourceUrl)
+    , description(description)
+{
+}
+
+OneDriveImageSyncAdaptor::ImageData::ImageData(const ImageData &other)
+{
+    photoId = other.photoId;
+    albumId = other.albumId;
+    userId = other.userId;
+    createdTime = other.createdTime;
+    updatedTime = other.updatedTime;
+    photoName = other.photoName;
+    imageWidth = other.imageWidth;
+    imageHeight = other.imageHeight;
+    thumbnailUrl = other.thumbnailUrl;
+    imageSourceUrl = other.imageSourceUrl;
+    description = other.description;
+}
+
 // Update the following version if database schema changes e.g. new
 // fields are added to the existing tables.
 // It will make old tables dropped and creates new ones.
@@ -68,8 +102,6 @@ OneDriveImageSyncAdaptor::AlbumData::AlbumData(const AlbumData &other)
 
 OneDriveImageSyncAdaptor::OneDriveImageSyncAdaptor(QObject *parent)
     : OneDriveDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Images, parent)
-    , m_optimalThumbnailWidth(0)
-    , m_optimalImageWidth(0)
 {
     setInitialActive(m_db.isValid());
 }
@@ -85,12 +117,6 @@ QString OneDriveImageSyncAdaptor::syncServiceName() const
 
 void OneDriveImageSyncAdaptor::sync(const QString &dataTypeString, int accountId)
 {
-    // get ready for sync
-    if (!determineOptimalDimensions()) {
-        SOCIALD_LOG_ERROR("unable to determine optimal image dimensions, aborting");
-        setStatus(SocialNetworkSyncAdaptor::Error);
-        return;
-    }
     if (!initRemovalDetectionLists(accountId)) {
         SOCIALD_LOG_ERROR("unable to initialized cached account list for account" << accountId);
         setStatus(SocialNetworkSyncAdaptor::Error);
@@ -115,32 +141,50 @@ void OneDriveImageSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSy
 
 void OneDriveImageSyncAdaptor::beginSync(int accountId, const QString &accessToken)
 {
-    // Camera Roll is not return as an album, handle it as a special case
-    queryCameraRoll(accountId, accessToken);
-    requestAlbums(accountId, accessToken);
+    requestResource(accountId, accessToken);
 }
 
 void OneDriveImageSyncAdaptor::finalize(int accountId)
 {
-    Q_UNUSED(accountId)
-
     if (syncAborted()) {
         SOCIALD_LOG_INFO("sync aborted, won't commit database changes");
+    } else if (m_userId.isEmpty()) {
+        SOCIALD_LOG_ERROR("no user id determined during sync, aborting");
     } else {
-        // Add albums
-        QMap<QString, AlbumData>::const_iterator i = m_albumData.constBegin();
-        while (i != m_albumData.constEnd()) {
+        // Add user
+        if (m_db.user(m_userId).isNull()) {
+            m_db.addUser(m_userId, QDateTime::currentDateTime(), m_userDisplayName, accountId);
+        }
+
+        // Add/update albums
+        QMap<QString, AlbumData>::const_iterator i;
+        for (i = m_albumData.constBegin(); i != m_albumData.constEnd(); ++i) {
             const AlbumData &data = i.value();
             m_db.addAlbum(data.albumId, data.userId, data.createdTime,
                           data.updatedTime, data.albumName, data.imageCount);
-            ++i;
         }
 
         // Remove albums
         m_db.removeAlbums(m_cachedAlbums.keys());
 
+        // determine whether any images have been removed server-side.
+        Q_FOREACH (const QString &albumId, m_seenAlbums) {
+            checkRemovedImages(albumId);
+        }
+
         // Remove images
         m_db.removeImages(m_removedImages);
+
+        // Add/update images
+        QMap<QString, ImageData>::const_iterator j;
+        for (j = m_imageData.constBegin(); j != m_imageData.constEnd(); ++j) {
+            const ImageData &data = j.value();
+            m_db.addImage(data.photoId, data.albumId, data.userId,
+                          data.createdTime, data.updatedTime,
+                          data.photoName, data.imageWidth, data.imageHeight,
+                          data.thumbnailUrl, data.imageSourceUrl, data.description,
+                          accountId);
+        }
 
         m_db.commit();
         m_db.wait();
@@ -152,16 +196,27 @@ void OneDriveImageSyncAdaptor::finalize(int accountId)
     }
 }
 
-void OneDriveImageSyncAdaptor::queryCameraRoll(int accountId, const QString &accessToken)
+void OneDriveImageSyncAdaptor::requestResource(int accountId, const QString &accessToken, const QString &resourceTarget)
 {
-    QUrl url(QStringLiteral("%1/me/skydrive/camera_roll?access_token=%2").arg(api()).arg(accessToken));
-    QNetworkReply *reply = m_networkAccessManager->get(QNetworkRequest(url));
+    // TODO: in future, do a "first pass" WITHOUT child expansion to detect changed ctag/etag.
+    //       then, do a "second pass" only for the albums which have changed ctag.
+    const QString defaultResourceTarget = QStringLiteral("/drive/special/photos");
+    const QUrl url(QStringLiteral("%1%2%3?expand=children(expand=thumbnails)")
+                             .arg(api()).arg("/me").arg(resourceTarget.isEmpty()
+                                                        ? defaultResourceTarget
+                                                        : resourceTarget));
+    SOCIALD_LOG_DEBUG("OneDrive image sync requesting resource:" << url.toString());
+    QNetworkRequest req(url);
+    req.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
+                     QString(QLatin1String("Bearer ")).toUtf8() + accessToken.toUtf8());
+    QNetworkReply *reply = m_networkAccessManager->get(req);
     if (reply) {
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
+        reply->setProperty("defaultResource", resourceTarget.isEmpty());
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(sslErrorsHandler(QList<QSslError>)));
-            connect(reply, SIGNAL(finished()), this, SLOT(cameraRollFinishedHandler()));
+        connect(reply, SIGNAL(finished()), this, SLOT(resourceFinishedHandler()));
 
         // we're requesting data.  Increment the semaphore so that we know we're still busy.
         incrementSemaphore(accountId);
@@ -172,16 +227,21 @@ void OneDriveImageSyncAdaptor::queryCameraRoll(int accountId, const QString &acc
     }
 }
 
-void OneDriveImageSyncAdaptor::requestAlbums(int accountId, const QString &accessToken)
+void OneDriveImageSyncAdaptor::requestNextLink(int accountId, const QString &accessToken, const QString &nextLink, bool isDefaultResource)
 {
-    QUrl url(QStringLiteral("%1/me/albums?access_token=%2").arg(api()).arg(accessToken));
-    QNetworkReply *reply = m_networkAccessManager->get(QNetworkRequest(url));
+    SOCIALD_LOG_DEBUG("OneDrive image sync requesting nextlink resources:" << nextLink);
+    QUrl nextLinkUrl(nextLink);
+    QNetworkRequest req(nextLinkUrl);
+    req.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
+                     QString(QLatin1String("Bearer ")).toUtf8() + accessToken.toUtf8());
+    QNetworkReply *reply = m_networkAccessManager->get(req);
     if (reply) {
         reply->setProperty("accountId", accountId);
         reply->setProperty("accessToken", accessToken);
+        reply->setProperty("defaultResource", isDefaultResource);
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(sslErrorsHandler(QList<QSslError>)));
-            connect(reply, SIGNAL(finished()), this, SLOT(albumsFinishedHandler()));
+        connect(reply, SIGNAL(finished()), this, SLOT(resourceFinishedHandler()));
 
         // we're requesting data.  Increment the semaphore so that we know we're still busy.
         incrementSemaphore(accountId);
@@ -192,344 +252,119 @@ void OneDriveImageSyncAdaptor::requestAlbums(int accountId, const QString &acces
     }
 }
 
-void OneDriveImageSyncAdaptor::requestImages(int accountId, const QString &accessToken,
-                                             const QString &albumId, const QString &userId,
-                                             int imageCount, const QString &nextRound)
-{
-    QString path = nextRound.isEmpty() ? QStringLiteral("%1/files/?filter=photos&limit=400").arg(albumId)
-                                       : nextRound;
-
-    QUrl url(QStringLiteral("%1/%2&access_token=%3&").arg(api()).arg(path).arg(accessToken));
-    QNetworkReply *reply = m_networkAccessManager->get(QNetworkRequest(url));
-    if (reply) {
-        reply->setProperty("accountId", accountId);
-        reply->setProperty("accessToken", accessToken);
-        reply->setProperty("albumId", albumId);
-        reply->setProperty("userId", userId);
-        reply->setProperty("imageCount", imageCount);
-        connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(errorHandler(QNetworkReply::NetworkError)));
-        connect(reply, SIGNAL(sslErrors(QList<QSslError>)), this, SLOT(sslErrorsHandler(QList<QSslError>)));
-        connect(reply, SIGNAL(finished()), this, SLOT(imagesFinishedHandler()));
-
-        // we're requesting data.  Increment the semaphore so that we know we're still busy.
-        if (nextRound.isEmpty()) {
-            incrementSemaphore(accountId);
-        }
-        setupReplyTimeout(accountId, reply);
-    } else {
-        SOCIALD_LOG_ERROR("unable to request data from OneDrive account with id" << accountId);
-        clearRemovalDetectionLists(); // don't perform server-side removal detection during this sync run.
-    }
-}
-
-void OneDriveImageSyncAdaptor::cameraRollFinishedHandler()
+void OneDriveImageSyncAdaptor::resourceFinishedHandler()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-    bool isError = reply->property("isError").toBool();
-    int accountId = reply->property("accountId").toInt();
-    QString accessToken = reply->property("accessToken").toString();
-    QByteArray replyData = reply->readAll();
+    const bool isError = reply->property("isError").toBool();
+    const int accountId = reply->property("accountId").toInt();
+    const QString accessToken = reply->property("accessToken").toString();
+    const bool defaultResource = reply->property("defaultResource").toBool();
+    const QByteArray replyData = reply->readAll();
     disconnect(reply);
     reply->deleteLater();
     removeReplyTimeout(accountId, reply);
 
     bool ok = false;
-    QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
-    if (isError || !ok) {
-        SOCIALD_LOG_ERROR("unable to read albums response for OneDrive account with id" << accountId);
+    const QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
+    if (isError || !ok || !parsed.contains(QLatin1String("id"))) {
+        SOCIALD_LOG_ERROR("Unable to parse query response for OneDrive account with id" << accountId);
+        SOCIALD_LOG_DEBUG("Received response data:" << replyData);
         clearRemovalDetectionLists(); // don't perform server-side removal detection during this sync run.
         decrementSemaphore(accountId);
         return;
     }
 
-    QString albumId = parsed.value(QLatin1String("id")).toString();
-    QString albumName = parsed.value(QLatin1String("name")).toString();
-    QString createdTimeStr = parsed.value(QLatin1String("created_time")).toString();
-    QString updatedTimeStr = parsed.value(QLatin1String("updated_time")).toString();
-
-    QJsonObject from = parsed.value(QLatin1String("from")).toObject();
-    if (from.isEmpty()) {
-        SOCIALD_LOG_ERROR("camera roll doesn't contain user iformation for OneDrive account with id" << accountId);
-        clearRemovalDetectionLists(); // don't perform server-side removal detection during this sync run.
-        decrementSemaphore(accountId);
-        return;
-    }
-
-    QString userId = from.value(QLatin1String("id")).toString();;
-    QDateTime createdTime = QDateTime::fromString(createdTimeStr, Qt::ISODate);
-    QDateTime updatedTime = QDateTime::fromString(updatedTimeStr, Qt::ISODate);
-
-    const OneDriveAlbum::ConstPtr &dbAlbum = m_cachedAlbums.value(albumId);
-    m_cachedAlbums.remove(albumId);  // Removal detection
-    if (!dbAlbum.isNull() && (dbAlbum->updatedTime() >= updatedTime)) {
-        SOCIALD_LOG_DEBUG("album with id" << albumId << "by user" << userId <<
-                          "from OneDrive account with id" << accountId << "doesn't need sync");
-        decrementSemaphore(accountId);
-        return;
-    }
-
-    possiblyAddNewUser(userId, accountId, accessToken);
-    m_db.syncAccount(accountId, userId);
-
-    // imageCount value contains all the files an dfolders in the ablbum, not just photos.
-    // store temporarily and insert to database only after we know the actual count.
-    m_albumData.insert(albumId, AlbumData(albumId, userId, createdTime, updatedTime, albumName, 0));
-
-    requestImages(accountId, accessToken, albumId, userId);
-
-    // Finally, reduce our semaphore.
-    decrementSemaphore(accountId);
-}
-
-void OneDriveImageSyncAdaptor::albumsFinishedHandler()
-{
-    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-    bool isError = reply->property("isError").toBool();
-    int accountId = reply->property("accountId").toInt();
-    QString accessToken = reply->property("accessToken").toString();
-    QByteArray replyData = reply->readAll();
-    disconnect(reply);
-    reply->deleteLater();
-    removeReplyTimeout(accountId, reply);
-
-    bool ok = false;
-    QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
-    if (isError || !ok || !parsed.contains(QLatin1String("data"))) {
-        SOCIALD_LOG_ERROR("unable to read albums response for OneDrive account with id" << accountId);
-        clearRemovalDetectionLists(); // don't perform server-side removal detection during this sync run.
-        decrementSemaphore(accountId);
-        return;
-    }
-
-    QJsonArray data = parsed.value(QLatin1String("data")).toArray();
-    if (data.size() == 0) {
-        SOCIALD_LOG_DEBUG("OneDrive account with id" << accountId << "has no albums");
-        decrementSemaphore(accountId);
-        return;
-    }
-
-    // read the albums information
-    for (int i = 0; i < data.size(); ++i) {
-        QJsonObject albumObject = data.at(i).toObject();
-        if (albumObject.isEmpty()) {
-            continue;
-        }
-
-        QString albumId = albumObject.value(QLatin1String("id")).toString();
-        QString userId = albumObject.value(QLatin1String("from")).toObject().value(QLatin1String("id")).toString();
-        if (!userId.isEmpty()) {
-            m_db.syncAccount(accountId, userId);
-        }
-
-        QString albumName = albumObject.value(QLatin1String("name")).toString();
-        QString createdTimeStr = albumObject.value(QLatin1String("created_time")).toString();
-        QString updatedTimeStr = albumObject.value(QLatin1String("updated_time")).toString();
-
-        // check to see whether we need to sync (any changes since last sync)
-        // Note that we also check if the image count is the same, since, when
-        // removing an image, the updatedTime is not changed
-        QDateTime createdTime = QDateTime::fromString(createdTimeStr, Qt::ISODate);
-        QDateTime updatedTime = QDateTime::fromString(updatedTimeStr, Qt::ISODate);
-
-        const OneDriveAlbum::ConstPtr &dbAlbum = m_cachedAlbums.value(albumId);
-        m_cachedAlbums.remove(albumId);  // Removal detection
-        if (!dbAlbum.isNull() && (dbAlbum->updatedTime() >= updatedTime)) {
-            SOCIALD_LOG_DEBUG("album with id" << albumId << "by user" << userId <<
-                              "from OneDrive account with id" << accountId << "doesn't need sync");
-            continue;
-        }
-
-        // We need to sync. We save the album entry, and request the images for the album.
-        // When saving the album, we might need to add a new user
-        possiblyAddNewUser(userId, accountId, accessToken);
-
-        // imageCount value contains all the files an dfolders in the ablbum, not just photos.
-        // store temporarily and insert to database only after we know the actual count.
-        m_albumData.insert(albumId, AlbumData(albumId, userId, createdTime, updatedTime, albumName, 0));
-
-        // request album content
-        requestImages(accountId, accessToken, albumId, userId);
-    }
-
-    // Finally, reduce our semaphore.
-    decrementSemaphore(accountId);
-}
-
-void OneDriveImageSyncAdaptor::imagesFinishedHandler()
-{
-    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-    bool isError = reply->property("isError").toBool();
-    int accountId = reply->property("accountId").toInt();
-    QString accessToken = reply->property("accessToken").toString();
-    QString userId = reply->property("userId").toString();
-    QString albumId = reply->property("albumId").toString();
-    int imageCount = reply->property("imageCount").toInt();
-    QByteArray replyData = reply->readAll();
-    disconnect(reply);
-    reply->deleteLater();
-    removeReplyTimeout(accountId, reply);
-
-    bool ok = false;
-    QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
-    if (isError || !ok || !parsed.contains(QLatin1String("data"))) {
-        SOCIALD_LOG_ERROR("unable to read photos response for OneDrive account with id" << accountId);
-        clearRemovalDetectionLists(); // don't perform server-side removal detection during this sync run.
-        decrementSemaphore(accountId);
-        return;
-    }
-
-    QJsonArray data = parsed.value(QLatin1String("data")).toArray();
-    if (data.size() == 0) {
-        SOCIALD_LOG_DEBUG("album with id" << albumId << "from OneDrive account with id" << accountId << "has no photos");
-        checkRemovedImages(albumId);
-        decrementSemaphore(accountId);
-        return;
-    }
-
-    // read the photos information
-    foreach (const QJsonValue imageValue, data) {
-        QJsonObject imageObject = imageValue.toObject();
-        if (imageObject.isEmpty()) {
-            continue;
-        }
-
-        QString type = imageObject.value(QLatin1String("type")).toString();
-        if (type != QStringLiteral("photo")) {
-            // should not happen as we have a filter in request, but just to be sure
-            continue;
-        }
-
-        imageCount++;
-
-        QString photoId = imageObject.value(QLatin1String("id")).toString();
-        QString thumbnailUrl = imageObject.value(QLatin1String("picture")).toString();
-        QString imageSrcUrl = imageObject.value(QLatin1String("location")).toString();
-        QString createdTimeStr = imageObject.value(QLatin1String("when_taken")).toString();
-        QString updatedTimeStr = imageObject.value(QLatin1String("updated_time")).toString();
-        QString photoName = imageObject.value(QLatin1String("name")).toString();
-        QString description = imageObject.value(QLatin1String("description")).toString();
-        int imageWidth = 0;
-        int imageHeight = 0;
-
-        // Find optimal thumbnail and image source urls based on dimensions.
-        QList<ImageSource> imageSources;
-        QJsonArray images = imageObject.value(QLatin1String("images")).toArray();
-        foreach (const QJsonValue &imageValue, images) {
-            QJsonObject image = imageValue.toObject();
-            imageSources << ImageSource(static_cast<int>(image.value(QLatin1String("width")).toDouble()),
-                                        static_cast<int>(image.value(QLatin1String("height")).toDouble()),
-                                        image.value(QLatin1String("source")).toString());
-        }
-
-        bool foundOptimalImage = false, foundOptimalThumbnail = false;
-        std::sort(imageSources.begin(), imageSources.end());
-        Q_FOREACH (const ImageSource &img, imageSources) {
-            if (!foundOptimalThumbnail && qMin(img.width, img.height) >= m_optimalThumbnailWidth) {
-                foundOptimalThumbnail = true;
-                thumbnailUrl = img.sourceUrl;
-            }
-            if (!foundOptimalImage && qMin(img.width, img.height) >= m_optimalImageWidth) {
-                foundOptimalImage = true;
-                imageWidth = img.width;
-                imageHeight = img.height;
-                imageSrcUrl = img.sourceUrl;
-            }
-        }
-        if (!foundOptimalThumbnail) {
-            // just choose the largest one.
-            thumbnailUrl = imageSources.last().sourceUrl;
-        }
-        if (!foundOptimalImage) {
-            // just choose the largest one.
-            imageSrcUrl = imageSources.last().sourceUrl;
-            imageWidth = imageSources.last().width;
-            imageHeight = imageSources.last().height;
-        }
-
-        QDateTime createdTime = QDateTime::fromString(createdTimeStr, Qt::ISODate);
-        QDateTime updatedTime = QDateTime::fromString(updatedTimeStr, Qt::ISODate);
-        if (!m_serverImageIds[albumId].contains(photoId)) {
-            m_serverImageIds[albumId].insert(photoId);
-        }
-
-        // check if we need to sync, and write to the database.
-        OneDriveImage::ConstPtr dbPhoto = m_db.image(photoId);
-        if (!dbPhoto.isNull()
-              && dbPhoto->description() == description
-              && dbPhoto->imageName() == photoName) {
-            SOCIALD_LOG_DEBUG("have previously cached photo" << photoId << ":" << imageSrcUrl);
-        } else {
-            SOCIALD_LOG_DEBUG("caching or updating photo" << photoId << ":" << imageSrcUrl << "->" << imageWidth << "x" << imageHeight);
-            m_db.addImage(photoId, albumId, userId, createdTime, updatedTime,
-                          photoName, imageWidth, imageHeight, thumbnailUrl,
-                          imageSrcUrl, description, accountId);
-        }
-    }
-    // perform a continuation request if required.
-    QJsonObject paging = parsed.value(QLatin1String("paging")).toObject();
-    if (!paging.isEmpty()) {
-        QString next = paging.value(QLatin1String("next")).toString();
-        if (!next.isEmpty()) {
-            SOCIALD_LOG_DEBUG("performing continuation request for more photos for OneDrive account with id" << accountId << ":" << next);
-            requestImages(accountId, accessToken, albumId, userId, imageCount, next);
+    const QJsonObject userObj = parsed.value("createdBy").toObject().value("user").toObject();
+    if (defaultResource) {
+        m_userDisplayName = userObj.value("displayName").toString();
+        m_userId = userObj.value("id").toString();
+        if (m_userId.isEmpty()) {
+            SOCIALD_LOG_DEBUG("Unable to determine user id for default resource, aborting");
+            decrementSemaphore(accountId);
             return;
         }
-    }
-
-    // now we know the actual image count, update it.
-    m_albumData[albumId].imageCount = imageCount;
-
-    checkRemovedImages(albumId);
-    // we're finished this request.  Decrement our busy semaphore.
-    decrementSemaphore(accountId);
-}
-
-void OneDriveImageSyncAdaptor::possiblyAddNewUser(const QString &userId, int accountId,
-                                                  const QString &accessToken)
-{
-    if (!m_db.user(userId).isNull()) {
+        m_db.syncAccount(accountId, m_userId);
+    } else if (m_userId != userObj.value("id").toString()) {
+        // ignore this album, not created by the current user.
+        SOCIALD_LOG_DEBUG("Ignoring album" << parsed.value("name").toString() << " - different user.");
+        decrementSemaphore(accountId);
         return;
     }
 
-    // Call OneDrive to get user informatio
-    QUrl url(QStringLiteral("%1/%2?access_token=%3").arg(api()).arg(userId).arg(accessToken));
-    QUrlQuery query(url);
-    url.setQuery(query);
-    QNetworkReply *reply = m_networkAccessManager->get(QNetworkRequest(url));
-    if (reply) {
-        reply->setProperty("accountId", accountId);
-        reply->setProperty("accessToken", accessToken);
-        connect(reply, SIGNAL(error(QNetworkReply::NetworkError)),
-                this, SLOT(errorHandler(QNetworkReply::NetworkError)));
-        connect(reply, SIGNAL(sslErrors(QList<QSslError>)),
-                this, SLOT(sslErrorsHandler(QList<QSslError>)));
-        connect(reply, SIGNAL(finished()), this, SLOT(userFinishedHandler()));
+    const QJsonObject fileSystemInfo = parsed.value("fileSystemInfo").toObject();
 
-        incrementSemaphore(accountId);
-        setupReplyTimeout(accountId, reply);
+    const QString albumId = parsed.value("id").toString();
+    const QDateTime createdTime = QDateTime::fromString(fileSystemInfo.value("createdDateTime").toString(), Qt::ISODate);
+    const QDateTime updatedTime = QDateTime::fromString(fileSystemInfo.value("lastModifiedDateTime").toString(), Qt::ISODate);
+    const QString albumName = parsed.value("name").toString();
+    int photoCount = 0;
+
+    const QJsonArray children = parsed.value("children").toArray();
+    for (int i = 0; i < children.size(); ++i) {
+        const QJsonObject child = children.at(i).toObject();
+        if (child.contains("folder")) {
+            const QJsonObject parentReference = child.value("parentReference").toObject();
+            const QString onedriveResourceTarget = QStringLiteral("%1/%2").arg(parentReference.value("path").toString(), child.value("name").toString());
+            SOCIALD_LOG_DEBUG("Found subfolder:" << child.value("name").toString() << "of folder:" << albumName);
+            requestResource(accountId, accessToken, onedriveResourceTarget);
+        } else if (child.contains("image") && child.contains("@microsoft.graph.downloadUrl")) {
+            photoCount++;
+            const QJsonArray thumbnails = child.value("thumbnails").toArray();
+            const QJsonObject thumbnail = thumbnails.size() ? thumbnails.at(0).toObject() : QJsonObject();
+            const QString photoId = child.value("id").toString();
+            const QDateTime photoCreatedTime = QDateTime::fromString(child.value("createdDateTime").toString(), Qt::ISODate);
+            const QDateTime photoUpdatedTime = QDateTime::fromString(child.value("lastModifiedDateTime").toString(), Qt::ISODate);
+            const QString photoName = child.value("name").toString();
+            const int imageWidth = child.value("image").toObject().value("width").toInt();
+            const int imageHeight = child.value("image").toObject().value("height").toInt();
+            const QString photoThumbnailUrl = thumbnail.value("medium").toObject().value("url").toString();
+            const QString photoImageSrcUrl = QStringLiteral("%1%2%3%4%5")
+                    .arg(api()).arg("/me").arg("/drive/items/").arg(photoId).arg("/content");
+            const QString photoDescription = child.value("description").toString();
+            const ImageData image(photoId, albumId, m_userId, photoCreatedTime, photoUpdatedTime, photoName,
+                                  imageWidth, imageHeight, photoThumbnailUrl, photoImageSrcUrl, photoDescription);
+
+            // record the fact that we've seen this photo in this album
+            m_serverAlbumImageIds[albumId].insert(photoId);
+
+            // now check to see if this image has changed server-side
+            const OneDriveImage::ConstPtr &dbImage = m_db.image(photoId);
+            if (dbImage.isNull()
+                    || dbImage->imageId() != photoId
+                    || dbImage->createdTime().toTime_t() < photoCreatedTime.toTime_t()
+                    || dbImage->updatedTime().toTime_t() < photoUpdatedTime.toTime_t()) {
+                // changed, need to update in our local db.
+                SOCIALD_LOG_DEBUG("Image:" << photoName << "in folder:" << albumName << "added or changed on server");
+                m_imageData.insert(photoId, image);
+            }
+        }
     }
-}
 
-void OneDriveImageSyncAdaptor::userFinishedHandler()
-{
-    QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
-    QByteArray replyData = reply->readAll();
-    int accountId = reply->property("accountId").toInt();
-    disconnect(reply);
-    reply->deleteLater();
-    removeReplyTimeout(accountId, reply);
-
-    bool ok = false;
-    QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
-    if (!ok || !parsed.contains(QLatin1String("id"))) {
-        SOCIALD_LOG_ERROR("unable to read user response for OneDrive account with id" << accountId);
-        return;
+    const OneDriveAlbum::ConstPtr &dbAlbum = m_cachedAlbums.value(albumId);
+    m_cachedAlbums.remove(albumId); // Removal detection
+    m_seenAlbums.insert(albumId);
+    if (!dbAlbum.isNull() && (dbAlbum->updatedTime().toTime_t() >= updatedTime.toTime_t())) {
+        SOCIALD_LOG_DEBUG("album with id" << albumId << "by user" << m_userId <<
+                          "from OneDrive account with id" << accountId << "doesn't need update");
+    } else {
+        SOCIALD_LOG_DEBUG("Album:" << albumName << "added or changed on server");
+        const AlbumData album(albumId, m_userId, createdTime, updatedTime, albumName, photoCount);
+        if (m_albumData.contains(albumId)) {
+            // updating due to nextlink / continuation request
+            m_albumData[albumId].imageCount += photoCount;
+        } else {
+            // new unseen album.
+            m_albumData.insert(albumId, album);
+        }
     }
 
-    QString userId = parsed.value(QLatin1String("id")).toString();
-    QString name = parsed.value(QLatin1String("name")).toString();
+    // if more than 200 children exist, the result will include a
+    // continuation request / pagination request next-link URL.
+    const QString nextLink = parsed.value("@odata.nextLink").toString();
+    if (!nextLink.isEmpty()) {
+        requestNextLink(accountId, accessToken, nextLink, defaultResource);
+    }
 
-    m_db.addUser(userId, QDateTime::currentDateTime(), name, accountId);
     decrementSemaphore(accountId);
 }
 
@@ -564,43 +399,18 @@ bool OneDriveImageSyncAdaptor::initRemovalDetectionLists(int accountId)
 void OneDriveImageSyncAdaptor::clearRemovalDetectionLists()
 {
     m_cachedAlbums.clear();
-    m_serverImageIds.clear();
+    m_serverAlbumImageIds.clear();
     m_removedImages.clear();
 }
 
 void OneDriveImageSyncAdaptor::checkRemovedImages(const QString &albumId)
 {
-    const QSet<QString> &serverImageIds = m_serverImageIds.value(albumId);
-    QSet<QString> cachedImageIds = m_db.imageIds(albumId).toSet();
+    const QSet<QString> &serverImageIds = m_serverAlbumImageIds.value(albumId);
+    QSet<QString> dbImageIds = m_db.imageIds(albumId).toSet();
 
     foreach (const QString &imageId, serverImageIds) {
-        cachedImageIds.remove(imageId);
+        dbImageIds.remove(imageId);
     }
 
-    m_removedImages.append(cachedImageIds.toList());
-}
-
-bool OneDriveImageSyncAdaptor::determineOptimalDimensions()
-{
-    int width = 0, height = 0;
-    const int defaultValue = 0;
-    MGConfItem widthConf("/lipstick/screen/primary/width");
-    if (widthConf.value(defaultValue).toInt() != defaultValue) {
-        width = widthConf.value(defaultValue).toInt();
-    }
-    MGConfItem heightConf("/lipstick/screen/primary/height");
-    if (heightConf.value(defaultValue).toInt() != defaultValue) {
-        height = heightConf.value(defaultValue).toInt();
-    }
-
-    // we want to use the largest of these dimensions as the "optimal"
-    int maxDimension = qMax(width, height);
-    if (maxDimension % 3 == 0) {
-        m_optimalThumbnailWidth = maxDimension / 3;
-    } else {
-        m_optimalThumbnailWidth = (maxDimension / 2);
-    }
-    m_optimalImageWidth = maxDimension;
-    SOCIALD_LOG_DEBUG("Determined optimal image dimension:" << m_optimalImageWidth << ", thumbnail:" << m_optimalThumbnailWidth);
-    return true;
+    m_removedImages.append(dbImageIds.toList());
 }
