@@ -6,4 +6,5 @@ SUBDIRS = \
     twitter \
     onedrive \
     dropbox \
-    vk
+    vk \
+    knowncontacts

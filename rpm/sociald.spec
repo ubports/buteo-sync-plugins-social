@@ -16,6 +16,7 @@ BuildRequires:  pkgconfig(libsignon-qt5)
 BuildRequires:  pkgconfig(accounts-qt5) >= 1.13
 BuildRequires:  pkgconfig(socialcache) >= 0.0.48
 BuildRequires:  pkgconfig(libsailfishkeyprovider)
+BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 BuildRequires:  qt5-qttools-linguist
 BuildRequires:  ssu-devel
 Requires: buteo-syncfw-qt5-msyncd
@@ -44,7 +45,7 @@ BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-calendars
-Provides calendar synchronisation with Facebook
+%{summary}.
 
 %files facebook-calendars
 #out-of-process-plugin form:
@@ -74,7 +75,7 @@ BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-contacts
-Provides contact synchronisation with Facebook
+%{summary}
 
 %files facebook-contacts
 #out-of-process-plugin form:
@@ -101,7 +102,7 @@ Summary:    Provides image synchronisation with Facebook
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-images
-Provides image synchronisation with Facebook
+%{summary}.
 
 %files facebook-images
 #out-of-process-plugin form:
@@ -129,7 +130,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-signon
-Provides signon credentials refreshing with Facebook
+%{summary}.
 
 %files facebook-signon
 #out-of-process-plugin form:
@@ -159,7 +160,7 @@ BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
 
 %description google-calendars
-Provides calendar synchronisation with Google
+%{summary}.
 
 %files google-calendars
 #out-of-process-plugin form:
@@ -189,7 +190,7 @@ BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.1.58
 Requires: %{name} = %{version}-%{release}
 
 %description google-contacts
-Provides contact synchronisation with Google
+%{summary}.
 
 %files google-contacts
 #out-of-process-plugin form:
@@ -217,7 +218,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description google-signon
-Provides signon credentials refreshing with Google
+%{summary}.
 
 %files google-signon
 #out-of-process-plugin form:
@@ -249,7 +250,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description twitter-notifications
-Provides notification synchronisation with Twitter
+%{summary}.
 
 %files twitter-notifications
 #out-of-process-plugin form:
@@ -283,7 +284,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description twitter-posts
-Provides post synchronisation with Twitter
+%{summary}.
 
 %files twitter-posts
 #out-of-process-plugin form:
@@ -312,7 +313,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description onedrive-signon
-Provides signon credentials refreshing with OneDrive
+%{summary}.
 
 %files onedrive-signon
 #out-of-process-plugin form:
@@ -342,7 +343,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description vk-posts
-Provides post synchronisation with VK
+%{summary}.
 
 %files vk-posts
 %{_datadir}/lipstick/notificationcategories/x-nemo.social.vk.statuspost.conf
@@ -370,7 +371,7 @@ Summary:    Provides image synchronisation with Dropbox
 Requires: %{name} = %{version}-%{release}
 
 %description dropbox-images
-Provides image synchronisation with Dropbox
+%{summary}.
 
 %files dropbox-images
 #out-of-process-plugin form:
@@ -396,7 +397,7 @@ Summary:    Provides image synchronisation with OneDrive
 Requires: %{name} = %{version}-%{release}
 
 %description onedrive-images
-Provides image synchronisation with OneDrive
+%{summary}.
 
 %files onedrive-images
 #out-of-process-plugin form:
@@ -425,7 +426,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description onedrive-backup
-Provides backup-blob synchronization for OneDrive
+%{summary}.
 
 %files onedrive-backup
 #out-of-process-plugin form:
@@ -454,7 +455,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description dropbox-backup
-Provides backup-blob synchronization for Dropbox
+%{summary}.
 
 %files dropbox-backup
 #out-of-process-plugin form:
@@ -484,7 +485,7 @@ BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description vk-notifications
-Provides notification synchronisation with VK
+%{summary}.
 
 %files vk-notifications
 #out-of-process-plugin form:
@@ -514,7 +515,7 @@ BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
 
 %description vk-calendars
-Provides calendar synchronisation with VK
+%{summary}.
 
 %files vk-calendars
 #out-of-proces-plugin form:
@@ -544,7 +545,7 @@ BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 Requires: %{name} = %{version}-%{release}
 
 %description vk-contacts
-Provides contact synchronisation with VK
+%{summary}.
 
 %files vk-contacts
 #out-of-process-plugin form:
@@ -571,7 +572,7 @@ Summary:    Provides image synchronisation with VK
 Requires: %{name} = %{version}-%{release}
 
 %description vk-images
-Provides image synchronisation with VK
+%{summary}.
 
 %files vk-images
 #out-of-process-plugin form:
@@ -593,12 +594,34 @@ done
 systemctl-user restart msyncd.service || :
 
 
+
+%package knowncontacts
+Summary: Store locally created contacts
+
+%description knowncontacts
+Buteo sync plugin that stores locally created contacts, such as email
+recipients.
+
+%post knowncontacts
+systemctl-user try-restart msyncd.service || :
+
+%files knowncontacts
+%defattr(-,root,root,-)
+#out-of-process-plugin form:
+%{_libdir}/buteo-plugins-qt5/oopp/knowncontacts-client
+#in-process-plugin form:
+#/usr/lib/buteo-plugins-qt5/knowncontacts-client.so
+%{_sysconfdir}/buteo/profiles/client/knowncontacts.xml
+%{_sysconfdir}/buteo/profiles/sync/knowncontacts.Contacts.xml
+
+
+
 %package ts-devel
 Summary:    Translation source for sociald
 Group:      System/Applications
 
 %description ts-devel
-Translation source for sociald
+%{summary}.
 
 %files ts-devel
 %defattr(-,root,root,-)
@@ -612,7 +635,7 @@ Requires:   qt5-qtdeclarative-devel-tools
 Requires:   qt5-qtdeclarative-import-qttest
 
 %description tests
-Automatable tests for sociald
+%{summary}.
 
 %files tests
 %defattr(-,root,root,-)
