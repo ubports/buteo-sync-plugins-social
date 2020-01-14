@@ -122,8 +122,6 @@ private:
     QMap<int, QMap<QString, QString> > m_recurringEventIdToKCalUid;
     QMap<int, bool> m_syncSucceeded;
     QMap<int, bool> m_cleanSyncRequired;
-    QMap<int, QDateTime> m_prevSinceTimestamp;
-    QMap<int, QDateTime> m_newSinceTimestamp;
 
     QStringList m_calendarsBeingRequested;               // calendarIds
     QMap<QString, QString> m_calendarsFinishedRequested; // calendarId to updated timestamp string
@@ -131,6 +129,8 @@ private:
     QMap<QString, QString> m_calendarsNextSyncTokens;    // calendarId to sync token to use during next sync cycle
     QMultiMap<QString, QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > m_changesFromDownsync; // calendarId to change
     QMultiMap<QString, QPair<KCalCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
+    QSet<QString> m_syncTokenFailure; // calendarIds suffering from 410 error due to invalid sync token
+    QSet<QString> m_timeMinFailure;   // calendarIds suffering from 410 error due to invalid timeMin value
 
     mKCal::ExtendedCalendar::Ptr m_calendar;
     mKCal::ExtendedStorage::Ptr m_storage;

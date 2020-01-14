@@ -155,7 +155,7 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-calendars
 Summary:    Provides calendar synchronisation with Google
-BuildRequires:  pkgconfig(libmkcal-qt5)
+BuildRequires:  pkgconfig(libmkcal-qt5) >= 0.5.9
 BuildRequires:  pkgconfig(libkcalcoren-qt5)
 Requires: %{name} = %{version}-%{release}
 
