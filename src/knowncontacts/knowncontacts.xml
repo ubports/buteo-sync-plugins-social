@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<profile name="knowncontacts" type="client" >
+    <key name="Sync Transport" value="HTTP" />
+    <key name="Sync Direction" value="two-way" />
+    <key name="conflictpolicy" value="server-wins" />
+</profile>

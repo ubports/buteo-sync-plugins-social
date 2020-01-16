@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<profile name="knowncontacts.Contacts" type="sync" >
+    <key name="destinationtype" value="online"/>
+    <key name="displayname" value="KnownContacts"/>
+    <key name="enabled" value="true" />
+    <key name="hidden" value="true" />
+    <key name="use_accounts" value="true" />
+
+    <profile name="knowncontacts" type="client" >
+        <key name="Sync Transport" value="HTTP" />
+        <key name="Sync Direction" value="two-way" />
+        <key name="conflictpolicy" value="server-wins" />
+    </profile>
+</profile>
