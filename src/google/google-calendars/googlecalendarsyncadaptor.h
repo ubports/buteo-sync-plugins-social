@@ -127,6 +127,7 @@ private:
     QMap<QString, QString> m_calendarsFinishedRequested; // calendarId to updated timestamp string
     QMap<QString, QString> m_calendarsThisSyncTokens;    // calendarId to sync token used during this sync cycle
     QMap<QString, QString> m_calendarsNextSyncTokens;    // calendarId to sync token to use during next sync cycle
+    QMap<QString, QDateTime> m_calendarsSyncDate;        // calendarId to since date to use when determining delta
     QMultiMap<QString, QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > m_changesFromDownsync; // calendarId to change
     QMultiMap<QString, QPair<KCalCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
     QSet<QString> m_syncTokenFailure; // calendarIds suffering from 410 error due to invalid sync token

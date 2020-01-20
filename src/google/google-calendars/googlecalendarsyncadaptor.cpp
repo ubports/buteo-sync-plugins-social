@@ -1553,6 +1553,7 @@ void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(int accountId, co
     m_calendarsFinishedRequested.insert(calendarId, updateTimestampStr);
     m_calendarsThisSyncTokens.insert(calendarId, syncToken);
     m_calendarsNextSyncTokens.insert(calendarId, nextSyncToken);
+    m_calendarsSyncDate.insert(calendarId, since);
     if (!m_calendarsBeingRequested.isEmpty()) {
         return; // still waiting for more requests to finish.
     }
@@ -1573,7 +1574,7 @@ void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(int accountId, co
         }
 
         // now upsync the local changes to the remote server
-        QList<UpsyncChange> changesToUpsync = determineSyncDelta(accountId, accessToken, finishedCalendarId, since);
+        QList<UpsyncChange> changesToUpsync = determineSyncDelta(accountId, accessToken, finishedCalendarId, m_calendarsSyncDate.value(finishedCalendarId));
         if (changesToUpsync.size()) {
             if (syncAborted()) {
                 SOCIALD_LOG_DEBUG("skipping upsync of queued upsync changes due to sync being aborted");
@@ -1960,8 +1961,13 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                         SOCIALD_LOG_DEBUG("Converting local addition to modification due to clean-sync semantics");
                     } else {
                         // this event was previously downsynced from the remote in the last sync cycle.
-                        // we treat it as a local modification (as it may have changed locally since).
-                        // TODO: detect whether any actual change has occurred since it was downsynced.  How?
+                        // check to see whether it has changed locally since we downsynced it.
+                        if (event->lastModified().dateTime() < since) {
+                            SOCIALD_LOG_DEBUG("Discarding local event addition:" << event->uid() << event->recurrenceId().toString() << "as spurious due to downsync, for gcalId:" << gcalId);
+                            discardedLocalModifications++;
+                            continue;
+                        }
+                        // we treat it as a local modification (as it has changed locally since it was downsynced).
                         SOCIALD_LOG_DEBUG("Converting local addition to modification due to it being a previously downsynced event");
                     }
                     // convert the local event to a JSON object.
