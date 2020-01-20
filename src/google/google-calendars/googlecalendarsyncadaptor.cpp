@@ -1691,8 +1691,8 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 QString gcalId = gCalEventId(incidence);
                 if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
                     // partially upsynced artifact.  It may need to be updated with gcalId comment field.
-                    partialUpsyncArtifactsNeedingUpdate.insert(gcalId);
                     gcalId = upsyncedUidMapping.value(incidence->uid());
+                    partialUpsyncArtifactsNeedingUpdate.insert(gcalId);
                 }
                 if (gcalId.size() && eventPtr) {
                     SOCIALD_LOG_TRACE("Have local event:" << gcalId << "," << eventPtr->uid() << ":" << eventPtr->recurrenceId().toString());
@@ -1945,6 +1945,9 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                         SOCIALD_LOG_DEBUG("Discarding partial upsync artifact local addition:" << eventId);
                         discardedLocalAdditions++;
                         continue;
+                    } else {
+                        // should never be hit.  bug in plugin code.
+                        SOCIALD_LOG_ERROR("Not discarding partial upsync artifact local addition due to data inconsistency:" << eventId);
                     }
                 }
                 QString gcalId = gCalEventId(event);
