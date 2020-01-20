@@ -2122,7 +2122,17 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
         // error occurred during request.
         SOCIALD_LOG_ERROR("error" << httpCode << "occurred while upsyncing calendar data to Google account" << accountId << "; got:");
         errorDumpStr(QString::fromUtf8(replyData));
-        m_syncSucceeded[accountId] = false;
+
+        // If we get a ContentOperationNotPermittedError, then allow the sync cycle to succeed.
+        // Most likely, it's an attempt to modify a shared event, and Google prevents
+        // any user other than the original creator of the event from modifying those.
+        // Such errors should not prevent the rest of the sync cycle from succeeding.
+        // TODO: is there some way to detect whether I am the organizer/owner of the event?
+        if (reply->error() == QNetworkReply::ContentOperationNotPermittedError) {
+            SOCIALD_LOG_TRACE("Ignoring 403 due to shared calendar resource");
+        } else {
+            m_syncSucceeded[accountId] = false;
+        }
     } else if (upsyncType == GoogleCalendarSyncAdaptor::Delete) {
         // we expect an empty response body on success for Delete operations
         if (!replyData.isEmpty()) {
