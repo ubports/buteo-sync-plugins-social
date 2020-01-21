@@ -504,6 +504,39 @@ QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFor
     return retn;
 }
 
+KDateTime parseDateTimeString(const QString &dateTimeStr)
+{
+    KDateTime parsedTime = KDateTime::fromString(dateTimeStr, RFC3339_FORMAT);
+    KDateTime ntzcTime = KDateTime::fromString(dateTimeStr, RFC3339_FORMAT_NTZC);
+
+    if (ntzcTime.time() > parsedTime.time()) {
+        parsedTime = ntzcTime;
+    }
+
+    // different format?  let KDateTime detect the format automatically.
+    if (parsedTime.isNull()) {
+        parsedTime = KDateTime::fromString(dateTimeStr);
+    }
+
+    return parsedTime.toLocalZone();
+}
+
+void extractCreatedAndUpdated(const QJsonObject &eventData,
+                              KDateTime *created,
+                              KDateTime *updated)
+{
+    const QString createdStr = eventData.value(QLatin1String("created")).toVariant().toString();
+    const QString updatedStr = eventData.value(QLatin1String("updated")).toVariant().toString();
+
+    if (!createdStr.isEmpty()) {
+        *created = parseDateTimeString(createdStr);
+    }
+
+    if (!updatedStr.isEmpty()) {
+        *updated = parseDateTimeString(updatedStr);
+    }
+}
+
 void extractStartAndEnd(const QJsonObject &eventData,
                         bool *startExists,
                         bool *endExists,
@@ -540,16 +573,7 @@ void extractStartAndEnd(const QJsonObject &eventData,
 
     if (*startExists) {
         if (!*startIsDateOnly) {
-            KDateTime parsedStartTime = KDateTime::fromString(startTimeString, RFC3339_FORMAT);
-            KDateTime ntzcStartTime = KDateTime::fromString(startTimeString, RFC3339_FORMAT_NTZC);
-            if (ntzcStartTime.time() > parsedStartTime.time()) parsedStartTime = ntzcStartTime;
-
-            // different format?  let KDateTime detect the format automatically.
-            if (parsedStartTime.isNull()) {
-                parsedStartTime = KDateTime::fromString(startTimeString);
-            }
-
-            *start = parsedStartTime.toLocalZone();
+            *start = parseDateTimeString(startTimeString);
         } else {
             *start = KDateTime(QLocale::c().toDate(startTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
             start->setDateOnly(true);
@@ -558,16 +582,7 @@ void extractStartAndEnd(const QJsonObject &eventData,
 
     if (*endExists) {
         if (!*endIsDateOnly) {
-            KDateTime parsedEndTime = KDateTime::fromString(endTimeString, RFC3339_FORMAT);
-            KDateTime ntzcEndTime = KDateTime::fromString(endTimeString, RFC3339_FORMAT_NTZC);
-            if (ntzcEndTime.time() > parsedEndTime.time()) parsedEndTime = ntzcEndTime;
-
-            // different format?  let KDateTime detect the format automatically.
-            if (parsedEndTime.isNull()) {
-                parsedEndTime = KDateTime::fromString(endTimeString);
-            }
-
-            *end = parsedEndTime.toLocalZone();
+            *end = parseDateTimeString(endTimeString);
         } else {
             // Special handling for all-day events is required.
             if (*startExists && *startIsDateOnly) {
@@ -829,10 +844,11 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
         return; // this event has not changed server-side since we last saw it.
     }
 
-    KDateTime start, end;
+    KDateTime createdTimestamp, updatedTimestamp, start, end;
     bool startExists = false, endExists = false;
     bool startIsDateOnly = false, endIsDateOnly = false;
     bool isAllDay = false;
+    extractCreatedAndUpdated(json, &createdTimestamp, &updatedTimestamp);
     extractStartAndEnd(json, &startExists, &endExists, &startIsDateOnly, &endIsDateOnly, &isAllDay, &start, &end);
     if (gCalEventId(event) != json.value(QLatin1String("id")).toVariant().toString()) {
         START_EVENT_UPDATES_IF_REQUIRED(event, changed);
@@ -851,6 +867,12 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, description, setDescription, json.value(QLatin1String("description")).toVariant().toString(), changed)
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, location, setLocation, json.value(QLatin1String("location")).toVariant().toString(), changed)
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, revision, setRevision, json.value(QLatin1String("sequence")).toVariant().toInt(), changed)
+    if (createdTimestamp.isValid()) {
+        UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, created, setCreated, createdTimestamp, changed)
+    }
+    if (updatedTimestamp.isValid()) {
+        UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, lastModified, setLastModified, updatedTimestamp, changed)
+    }
     if (startExists) {
         UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, dtStart, setDtStart, start, changed)
     }
@@ -1707,8 +1729,8 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                     // TODO: can this codepath be hit?  If it was a partial upsync artifact,
                     //       shouldn't it be reported as a local+remote addition, not local modification?
                     // partially upsynced artifact
-                    partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // will already update due to local change.
                     gcalId = upsyncedUidMapping.value(incidence->uid());
+                    partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // will already update due to local change.
                 }
                 if (gcalId.size() && eventPtr) {
                     SOCIALD_LOG_DEBUG("Have local modification:" << incidence->uid() << "in" << calendarId);
@@ -1721,8 +1743,8 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                     // TODO: can this codepath be hit?  If it was a partial upsync artifact,
                     //       shouldn't it be reported as a local+remote addition, not local deletion?
                     // partially upsynced artifact
-                    partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // doesn't need update due to deletion.
                     gcalId = upsyncedUidMapping.value(incidence->uid());
+                    partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // doesn't need update due to deletion.
                 }
                 if (gcalId.size()) {
                     // Now we check to see whether this event was deleted due to a clean-sync (notebook removal).
@@ -2389,6 +2411,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(int accountId,
                 } break;
                 case GoogleCalendarSyncAdaptor::Insert: {
                     // add a new local event for the remote addition.
+                    const KDateTime currDateTime = KDateTime::currentUtcDateTime();
                     KCalCore::Event::Ptr event;
                     if (recurrenceId.isValid()) {
                         // this is a persistent occurrence for an already-existing series.
@@ -2439,6 +2462,34 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(int accountId,
                     }
                     bool changed = true; // set to true as it's an addition, no need to check for delta.
                     jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes[accountId].value(calendarId), m_icalFormat, &changed); // direct conversion
+
+                    // if no created or modified timestamp was explicitly defined in the JSON
+                    // then we need to set it manually to just prior to the sync anchor timestamp
+                    // otherwise the event will be automatically given timestamps based on
+                    // the current date time, which will then cause the event to be reported
+                    // as added/modified during the next sync cycle (or cause local deletion
+                    // to be ignored due to created timestamp being after the since timestamp).
+                    const QDateTime calendarSinceDate = m_calendarsSyncDate.value(calendarId);
+                    if (calendarSinceDate.isValid()) {
+                        // if we have a valid sync anchor, use a time just before that.
+                        const KDateTime pastDateTime = KDateTime(calendarSinceDate.addSecs(-2));
+                        if (event->created().dateTime() > calendarSinceDate) {
+                            event->setCreated(pastDateTime);
+                        }
+                        if (event->lastModified().dateTime() > calendarSinceDate) {
+                            event->setLastModified(pastDateTime);
+                        }
+                    } else {
+                        // otherwise for first time sync or clean sync, use a date time in the past.
+                        const KDateTime pastDateTime = currDateTime.addSecs(-3600);
+                        if (event->created() >= currDateTime) {
+                            event->setCreated(pastDateTime);
+                        }
+                        if (event->lastModified() >= currDateTime) {
+                            event->setLastModified(pastDateTime);
+                        }
+                    }
+
                     if (!m_calendar->addEvent(event, googleNotebook->uid())) {
                         SOCIALD_LOG_ERROR("Could not add dissociated occurrence to calendar:" << parentId << recurrenceId.toString());
                         m_syncSucceeded[accountId] = false;
