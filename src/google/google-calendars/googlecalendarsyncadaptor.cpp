@@ -1003,12 +1003,39 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
         // there is only one account per sync run, even though we haven't fully
         // cleaned up the multi-account-isms from the member variables / API.
         int accountId = m_syncSucceeded.keys().first();
-        if (m_syncSucceeded[accountId]) {
+        if (!m_syncSucceeded[accountId]) {
+            // sync failed.  check to see if we need to apply any changes to the database.
+            QSet<QString> calendarsRequiringChange;
+            for (const QString &calendarId : m_timeMinFailure) {
+                calendarsRequiringChange.insert(calendarId);
+            }
+            for (const QString &calendarId : m_syncTokenFailure) {
+                calendarsRequiringChange.insert(calendarId);
+            }
+            const KDateTime yesterdayDate = KDateTime::currentDateTime(KDateTime::Spec::UTC()).addDays(-1);
+            for (const QString &calendarId : calendarsRequiringChange) {
+                // this codepath is hit if the server replied with HTTP 410 for the sync token or timeMin value.
+                if (mKCal::Notebook::Ptr notebook = notebookForCalendarId(accountId, calendarId)) {
+                    if (m_syncTokenFailure.contains(calendarId)) {
+                        // this sync cycle failed due to the sync token being invalidated server-side.
+                        // trigger clean sync with wide time span on next sync.
+                        notebook->setSyncDate(KDateTime());
+                    } else if (m_timeMinFailure.contains(calendarId)) {
+                        // this sync cycle failed due to the timeMin value being too far in the past.
+                        // trigger clean sync with short time span on next sync.
+                        notebook->setSyncDate(yesterdayDate);
+                    }
+                    notebook->setCustomProperty(NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY, QString());
+                    m_storage->updateNotebook(notebook);
+                    m_storageNeedsSave = true;
+                }
+            }
+        } else {
+            // sync succeeded.  apply the changes to the database.
             applyRemoteChangesLocally(accountId);
             if (!m_syncSucceeded[accountId]) {
                 SOCIALD_LOG_INFO("Error occurred while applying remote changes locally");
             } else {
-                // also update the remote sync timestamp in each notebook.
                 Q_FOREACH (const QString &updatedCalendarId, m_calendarsFinishedRequested.keys()) {
                     // Update the sync date for the notebook, to the timestamp reported by Google
                     // in the calendar request for the remote calendar associated with the notebook,
@@ -1039,21 +1066,11 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
                             notebook->setSyncDate(syncDate);
                         }
                     } else {
-                        // this codepath is hit if the server replied with HTTP 410 for the sync token or timeMin value.
-                        if (m_syncTokenFailure.contains(updatedCalendarId)) {
-                            // this sync cycle failed due to the sync token being invalidated server-side.
-                            // trigger clean sync with wide time span on next sync.
-                            notebook->setSyncDate(KDateTime());
-                        } else if (m_timeMinFailure.contains(updatedCalendarId)) {
-                            // this sync cycle failed due to the timeMin value being too far in the past.
-                            // trigger clean sync with short time span on next sync.
-                            notebook->setSyncDate(yesterdayDate);
-                        } else {
-                            SOCIALD_LOG_ERROR("Error: no update timestamp, but no error detected!");
-                            notebook->setSyncDate(yesterdayDate);
-                        }
+                        SOCIALD_LOG_ERROR("Error: no update timestamp, but no error detected!");
+                        notebook->setSyncDate(yesterdayDate);
                     }
 
+                    // also update the remote sync token in each notebook.
                     notebook->setCustomProperty(NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY,
                                                 m_calendarsNextSyncTokens.value(updatedCalendarId));
                     m_storage->updateNotebook(notebook);
@@ -1536,8 +1553,8 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
         } else {
             SOCIALD_LOG_ERROR("unable to parse event data from request with account" << accountId << "; got:");
             errorDumpStr(QString::fromUtf8(replyData.constData()));
-            m_syncSucceeded[accountId] = false;
         }
+        m_syncSucceeded[accountId] = false;
     }
 
     if (!fetchingNextPage) {
@@ -1580,21 +1597,12 @@ void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(int accountId, co
         return; // still waiting for more requests to finish.
     }
 
-    if (syncAborted()) {
-        return; // sync was aborted before we received all remote data, and before we could upsync local changes.
+    if (syncAborted() || !m_syncSucceeded[accountId]) {
+        return; // sync was aborted or failed before we received all remote data, and before we could upsync local changes.
     }
 
     // determine local changes to upsync.
     Q_FOREACH (const QString &finishedCalendarId, m_calendarsFinishedRequested.keys()) {
-        // only determine changes and attempt to finish sync cycle if the server didn't respond with a 410 sync token error.
-        if (m_syncTokenFailure.contains(finishedCalendarId)) {
-            SOCIALD_LOG_DEBUG("skipping calculating sync delta due to 410 sync token error during sync");
-            continue;
-        } else if (m_timeMinFailure.contains(finishedCalendarId)) {
-            SOCIALD_LOG_DEBUG("skipping calculating sync delta due to 410 updated min error during sync");
-            continue;
-        }
-
         // now upsync the local changes to the remote server
         QList<UpsyncChange> changesToUpsync = determineSyncDelta(accountId, accessToken, finishedCalendarId, m_calendarsSyncDate.value(finishedCalendarId));
         if (changesToUpsync.size()) {
