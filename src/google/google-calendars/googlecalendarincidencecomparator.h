@@ -174,7 +174,15 @@ namespace GoogleCalendarIncidenceComparator {
         KCalCore::Person personB(*b->organizer().data());
         normalizePersonEmail(&personA);
         normalizePersonEmail(&personB);
-        GIC_RETURN_FALSE_IF_NOT_EQUAL_CUSTOM(personA != personB, "organizer", (personA.fullName() + " != " + personB.fullName()));
+        const QString aEmail = personA.email();
+        const QString bEmail = personB.email();
+        // If the aEmail is empty, the local event doesn't have organizer info.
+        // That's ok - Google will add organizer/creator info when we upsync,
+        // so don't treat it as a local modification.
+        // Otherwise, it is a "real" change.
+        if (aEmail != bEmail && !aEmail.isEmpty()) {
+            GIC_RETURN_FALSE_IF_NOT_EQUAL_CUSTOM(personA != personB, "organizer", (personA.fullName() + " != " + personB.fullName()));
+        }
 
         switch (a->type()) {
         case KCalCore::IncidenceBase::TypeEvent:
