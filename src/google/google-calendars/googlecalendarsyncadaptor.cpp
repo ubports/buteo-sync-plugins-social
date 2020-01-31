@@ -837,10 +837,13 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
 
 void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int defaultReminderStartOffset, KCalCore::ICalFormat &icalFormat, bool *changed)
 {
+    Q_ASSERT(!event.isNull());
     bool alreadyStarted = *changed; // if this is true, we don't need to call startUpdates/endUpdates() in this function.
-    if (!alreadyStarted && gCalETag(event) == json.value(QLatin1String("etag")).toVariant().toString()) {
+    const QString eventGCalETag(gCalETag(event));
+    const QString jsonGCalETag(json.value(QLatin1String("etag")).toVariant().toString());
+    if (!alreadyStarted && eventGCalETag == jsonGCalETag) {
         SOCIALD_LOG_DEBUG("Ignoring non-remote-changed:" << event->uid() << ","
-                          << gCalETag(event) << "==" << json.value(QLatin1String("etag")).toVariant().toString());
+                          << eventGCalETag << "==" << jsonGCalETag);
         return; // this event has not changed server-side since we last saw it.
     }
 
@@ -854,9 +857,9 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
         START_EVENT_UPDATES_IF_REQUIRED(event, changed);
         setGCalEventId(event, json.value(QLatin1String("id")).toVariant().toString());
     }
-    if (gCalETag(event) != json.value(QLatin1String("etag")).toVariant().toString()) {
+    if (eventGCalETag != jsonGCalETag) {
         START_EVENT_UPDATES_IF_REQUIRED(event, changed);
-        setGCalETag(event, json.value(QLatin1String("etag")).toVariant().toString());
+        setGCalETag(event, jsonGCalETag);
     }
     setRemoteUidCustomField(event, json.value(QLatin1String("iCalUID")).toVariant().toString(), json.value(QLatin1String("id")).toVariant().toString());
     extractRecurrence(json.value(QLatin1String("recurrence")).toArray(), event, icalFormat);
@@ -1718,6 +1721,10 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
             m_storage->deletedIncidences(&extraDeletedList, KDateTime(since).addSecs(1), googleNotebook->uid());
             uniteIncidenceLists(extraDeletedList, &deletedList);
             Q_FOREACH(const KCalCore::Incidence::Ptr incidence, allList) {
+                if (incidence.isNull()) {
+                    SOCIALD_LOG_DEBUG("Ignoring null incidence returned from allIncidences()");
+                    continue;
+                }
                 KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
                 QString gcalId = gCalEventId(incidence);
                 if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
@@ -1731,6 +1738,10 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 } // else, newly added locally, no gcalId yet.
             }
             Q_FOREACH(const KCalCore::Incidence::Ptr incidence, updatedList) {
+                if (incidence.isNull()) {
+                    SOCIALD_LOG_DEBUG("Ignoring null incidence returned from modifiedIncidences()");
+                    continue;
+                }
                 KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
                 QString gcalId = gCalEventId(incidence);
                 if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
@@ -1746,6 +1757,10 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 } // else, newly added+updated locally, no gcalId yet.
             }
             Q_FOREACH(const KCalCore::Incidence::Ptr incidence, deletedList) {
+                if (incidence.isNull()) {
+                    SOCIALD_LOG_DEBUG("Ignoring null incidence returned from deletedIncidences()");
+                    continue;
+                }
                 QString gcalId = gCalEventId(incidence);
                 if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
                     // TODO: can this codepath be hit?  If it was a partial upsync artifact,
@@ -1802,9 +1817,14 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 // also discard the event from the locally added list if it is reported there.
                 // this can happen due to cleansync, or the overlap in the sync date due to mkcal resolution issue.
                 for (int i = 0; i < addedList.size(); ++i) {
-                    const QString &gcalId(gCalEventId(addedList[i]));
+                    KCalCore::Incidence::Ptr addedEvent = addedList[i];
+                    if (addedEvent.isNull()) {
+                        SOCIALD_LOG_DEBUG("Disregarding local event addition due to null state");
+                        continue;
+                    }
+                    const QString &gcalId(gCalEventId(addedEvent));
                     if (gcalId == eventId) {
-                        SOCIALD_LOG_DEBUG("Discarding local event addition:" << addedList[i]->uid() << "due to remote deletion");
+                        SOCIALD_LOG_DEBUG("Discarding local event addition:" << addedEvent->uid() << "due to remote deletion");
                         addedList.remove(i);
                         discardedLocalAdditions++;
                         break;
@@ -1826,9 +1846,14 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 // also discard the event from the locally added list if it is reported there.
                 // this can happen due to cleansync, or the overlap in the sync date due to mkcal resolution issue.
                 for (int i = 0; i < addedList.size(); ++i) {
-                    const QString &gcalId(gCalEventId(addedList[i]));
+                    KCalCore::Incidence::Ptr addedEvent = addedList[i];
+                    if (addedEvent.isNull()) {
+                        SOCIALD_LOG_DEBUG("Disregarding local event addition due to null state");
+                        continue;
+                    }
+                    const QString &gcalId(gCalEventId(addedEvent));
                     if (gcalId == eventId) {
-                        SOCIALD_LOG_DEBUG("Discarding local event addition:" << addedList[i]->uid() << "due to remote EXDATE addition.  Sub-optimal resolution strategy!");
+                        SOCIALD_LOG_DEBUG("Discarding local event addition:" << addedEvent->uid() << "due to remote EXDATE addition.  Sub-optimal resolution strategy!");
                         addedList.remove(i);
                         discardedLocalAdditions++;
                         break;
@@ -1867,7 +1892,13 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 SOCIALD_LOG_DEBUG("Reloading partial upsync artifact:" << eventId << "from server as a modification");
                 changed = true;
             } else {
-                changed = remoteModificationIsReal(eventData, event);
+                SOCIALD_LOG_DEBUG("Determining if remote data differs from local data for event" << eventId << "in" << calendarId);
+                if (event.isNull()) {
+                    SOCIALD_LOG_DEBUG("Unable to find local event:" << eventId << ", marking as changed.");
+                    changed = true;
+                } else {
+                    changed = remoteModificationIsReal(eventData, event);
+                }
             }
             if (!changed) {
                 // Not a real change.  We discard this remote modification,
@@ -1888,9 +1919,14 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 // also discard the event from the locally added list if it is reported there.
                 // this can happen due to cleansync, or the overlap in the sync date due to mkcal resolution issue.
                 for (int i = 0; i < addedList.size(); ++i) {
-                    const QString &gcalId(gCalEventId(addedList[i]));
+                    KCalCore::Incidence::Ptr addedEvent = addedList[i];
+                    if (addedEvent.isNull()) {
+                        SOCIALD_LOG_DEBUG("Disregarding local event addition due to null state");
+                        continue;
+                    }
+                    const QString &gcalId(gCalEventId(addedEvent));
                     if (gcalId == eventId) {
-                        SOCIALD_LOG_DEBUG("Discarding local event addition:" << addedList[i]->uid() << "due to remote modification");
+                        SOCIALD_LOG_DEBUG("Discarding local event addition:" << addedEvent->uid() << "due to remote modification");
                         addedList.remove(i);
                         discardedLocalAdditions++;
                         break;
@@ -1976,12 +2012,11 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                         SOCIALD_LOG_DEBUG("Discarding partial upsync artifact local addition:" << eventId);
                         discardedLocalAdditions++;
                         continue;
-                    } else {
-                        // should never be hit.  bug in plugin code.
-                        SOCIALD_LOG_ERROR("Not discarding partial upsync artifact local addition due to data inconsistency:" << eventId);
                     }
+                    // should never be hit.  bug in plugin code.
+                    SOCIALD_LOG_ERROR("Not discarding partial upsync artifact local addition due to data inconsistency:" << eventId);
                 }
-                QString gcalId = gCalEventId(event);
+                const QString gcalId = gCalEventId(event);
                 if (!gcalId.isEmpty()) {
                     if (cleanSyncDeletionAdditions.contains(gcalId)) {
                         // this event was deleted+re-added due to clean sync.  treat it as a local modification
@@ -2357,6 +2392,9 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(int accountId,
         m_storage->loadNotebookIncidences(googleNotebook->uid());
         m_storage->allIncidences(&allLocalEventsList, googleNotebook->uid());
         Q_FOREACH(const KCalCore::Incidence::Ptr incidence, allLocalEventsList) {
+            if (incidence.isNull()) {
+                continue;
+            }
             KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
             QString gcalId = gCalEventId(incidence);
             if (gcalId.isEmpty()) {
@@ -2414,6 +2452,11 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(int accountId,
                 case GoogleCalendarSyncAdaptor::Modify: {
                     SOCIALD_LOG_DEBUG("Event modified remotely:" << eventId);
                     KCalCore::Event::Ptr event = allLocalEventsMap.value(eventId);
+                    if (event.isNull()) {
+                        SOCIALD_LOG_ERROR("Cannot find modified event:" << eventId << "in local calendar!");
+                        m_syncSucceeded[accountId] = false;
+                        continue;
+                    }
                     bool changed = false; // modification, not insert, so initially changed = "false".
                     jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes[accountId].value(calendarId), m_icalFormat, &changed);
                 } break;
