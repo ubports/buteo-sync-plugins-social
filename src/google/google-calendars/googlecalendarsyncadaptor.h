@@ -80,6 +80,15 @@ private:
         QByteArray eventData;
     };
 
+    struct CalendarInfo {
+        CalendarInfo() : change(NoChange), access(NoAccess) {}
+        QString summary;
+        QString description;
+        QString color;
+        ChangeType change;
+        AccessRole access;
+    };
+
     void requestCalendars(int accountId, const QString &accessToken,
                           bool needCleanSync, const QString &pageToken = QString());
     void requestEvents(int accountId, const QString &accessToken,
@@ -102,20 +111,18 @@ private:
                                         const QString &nextSyncToken, const QDateTime &since,
                                         const QString &updateTimestampStr);
 
+    static void setCalendarProperties(mKCal::Notebook::Ptr notebook,
+                                      const CalendarInfo &calendarInfo,
+                                      const QString &serverCalendarId,
+                                      int accountId,
+                                      Accounts::Manager *accountManager);
+
 private Q_SLOTS:
     void calendarsFinishedHandler();
     void eventsFinishedHandler();
     void upsyncFinishedHandler();
 
 private:
-    struct CalendarInfo {
-        CalendarInfo() : change(NoChange), access(NoAccess) {}
-        QString summary;
-        QString description;
-        QString color;
-        ChangeType change;
-        AccessRole access;
-    };
     QMap<int, QMap<QString, CalendarInfo> > m_serverCalendarIdToCalendarInfo;
     QMap<int, QMap<QString, int> > m_serverCalendarIdToDefaultReminderTimes;
     QMap<int, QMultiMap<QString, QJsonObject> > m_calendarIdToEventObjects;

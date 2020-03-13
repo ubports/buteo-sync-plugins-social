@@ -60,6 +60,8 @@ namespace {
 
 const int GOOGLE_CAL_SYNC_PLUGIN_VERSION = 3;
 const QByteArray NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY = QByteArrayLiteral("syncToken");
+const QByteArray NOTEBOOK_SERVER_ID_PROPERTY = QByteArrayLiteral("calendarServerId");
+const QByteArray NOTEBOOK_EMAIL_PROPERTY = QByteArrayLiteral("userPrincipalEmail");
 
 void errorDumpStr(const QString &str)
 {
@@ -974,6 +976,21 @@ void setLastSyncRequiresCleanSync(QList<int> accountIds)
     settingsFile.sync();
 }
 
+QString ownerEmailAddress(Accounts::Manager *manager, int accountId)
+{
+    QString emailAddress;
+    Accounts::Account *account = Accounts::Account::fromId(manager, accountId, Q_NULLPTR);
+    if (!account) {
+        SOCIALD_LOG_ERROR("unable to load Google account" << accountId << "to retrieve calendar sync tokens");
+    } else {
+        Accounts::Service srv(manager->service(QStringLiteral("google-gmail")));
+        account->selectService(srv);
+        emailAddress = account->valueAsString(QStringLiteral("emailaddress"));
+        account->deleteLater();
+    }
+    return emailAddress;
+}
+
 }
 
 GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
@@ -1163,7 +1180,7 @@ void GoogleCalendarSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkS
     // We clean all the entries in the calendar
     // Delete the notebooks from the storage
     foreach (mKCal::Notebook::Ptr notebook, m_storage->notebooks()) {
-        if (notebook->pluginName().startsWith(QString(QLatin1String("google-")))
+        if (notebook->pluginName().startsWith(QStringLiteral("google"))
                 && notebook->account() == QString::number(oldId)) {
             // remove the incidences and delete the notebook
             notebook->setIsReadOnly(false);
@@ -1318,12 +1335,12 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebooks(int accountId, cons
     QStringList calendarsToDelete;
     QStringList deviceCalendarIds;
     foreach (mKCal::Notebook::Ptr notebook, m_storage->notebooks()) {
-        // notebook pluginName is of form: google-calendarId
-        // where the calendarId comes from the server.
-        if (notebook->pluginName().startsWith(QStringLiteral("google-"))
+        if (notebook->pluginName().startsWith(QStringLiteral("google"))
                 && notebook->account() == QString::number(accountId)) {
-            QString currDeviceCalendarId = notebook->pluginName().mid(7);
-
+            // back compat: notebook pluginName used to be of form: google-calendarId
+            const QString currDeviceCalendarId = notebook->pluginName().startsWith(QStringLiteral("google-"))
+                                               ? notebook->pluginName().mid(7)
+                                               : notebook->customProperty(NOTEBOOK_SERVER_ID_PROPERTY);
             if (calendars.contains(currDeviceCalendarId)) {
                 // the server-side calendar exists on the device.
                 const QString notebookNextSyncToken = notebook->customProperty(NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY);
@@ -1577,8 +1594,10 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
 mKCal::Notebook::Ptr GoogleCalendarSyncAdaptor::notebookForCalendarId(int accountId, const QString &calendarId) const
 {
     foreach (mKCal::Notebook::Ptr notebook, m_storage->notebooks()) {
-        if (notebook->pluginName() == QString::fromLatin1("google-%1").arg(calendarId)
-                && notebook->account() == QString::number(accountId)) {
+        if (notebook->account() == QString::number(accountId)
+                && (notebook->customProperty(NOTEBOOK_SERVER_ID_PROPERTY) == calendarId
+                       // for backward compatibility with old accounts / notebooks:
+                    || notebook->pluginName() == QString::fromLatin1("google-%1").arg(calendarId))) {
             return notebook;
         }
     }
@@ -2250,6 +2269,27 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
     decrementSemaphore(accountId);
 }
 
+void GoogleCalendarSyncAdaptor::setCalendarProperties(
+        mKCal::Notebook::Ptr notebook,
+        const CalendarInfo &calendarInfo,
+        const QString &serverCalendarId,
+        int accountId,
+        Accounts::Manager *accountManager)
+{
+    notebook->setIsReadOnly(false);
+    notebook->setName(calendarInfo.summary);
+    notebook->setColor(calendarInfo.color);
+    notebook->setDescription(calendarInfo.description);
+    notebook->setPluginName(QStringLiteral("google"));
+    notebook->setCustomProperty(NOTEBOOK_SERVER_ID_PROPERTY, serverCalendarId);
+    if (calendarInfo.access == GoogleCalendarSyncAdaptor::Owner) {
+        notebook->setCustomProperty(NOTEBOOK_EMAIL_PROPERTY, ownerEmailAddress(accountManager, accountId));
+    }
+    // extra calendars have their own email addresses. using this property to pass it forward.
+    notebook->setSharedWith(QStringList() << serverCalendarId);
+    notebook->setAccount(QString::number(accountId));
+}
+
 void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
 {
     SOCIALD_LOG_DEBUG("applying all remote changes to local database");
@@ -2265,14 +2305,7 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
             case GoogleCalendarSyncAdaptor::Insert: {
                 SOCIALD_LOG_DEBUG("Adding local notebook for new server calendar:" << serverCalendarId);
                 mKCal::Notebook::Ptr notebook = mKCal::Notebook::Ptr(new mKCal::Notebook);
-                notebook->setIsReadOnly(false);
-                notebook->setName(calendarInfo.summary);
-                notebook->setColor(calendarInfo.color);
-                notebook->setDescription(calendarInfo.description);
-                notebook->setPluginName(QStringLiteral("google-") + serverCalendarId);
-                // extra calendars have their own email addresses. using this property to pass it forward.
-                notebook->setSharedWith(QStringList() << serverCalendarId);
-                notebook->setAccount(QString::number(accountId));
+                setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, m_accountManager);
                 m_storage->addNotebook(notebook);
                 m_storageNeedsSave = true;
             } break;
@@ -2285,12 +2318,7 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
                                                         // apply other database modifications if possible, in order to leave
                                                         // the local database in a usable state even after failed sync.
                 } else {
-                    notebook->setIsReadOnly(false);
-                    notebook->setName(calendarInfo.summary);
-                    notebook->setColor(calendarInfo.color);
-                    notebook->setDescription(calendarInfo.description);
-                    // TODO: might be able to remove this some day when all calendars are migrated to have (now 2019/06)
-                    notebook->setSharedWith(QStringList() << serverCalendarId);
+                    setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, m_accountManager);
                     m_storage->updateNotebook(notebook);
                     m_storageNeedsSave = true;
                 }
@@ -2327,16 +2355,10 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
                 // and then recreate.
                 SOCIALD_LOG_DEBUG("recreating notebook:" << notebook->uid() << "due to clean sync");
                 notebook = mKCal::Notebook::Ptr(new mKCal::Notebook);
-                notebook->setIsReadOnly(false);
                 if (!notebookUid.isEmpty()) {
                     notebook->setUid(notebookUid);
                 }
-                notebook->setName(calendarInfo.summary);
-                notebook->setColor(calendarInfo.color);
-                notebook->setDescription(calendarInfo.description);
-                notebook->setPluginName(QStringLiteral("google-") + serverCalendarId);
-                notebook->setSharedWith(QStringList() << serverCalendarId);
-                notebook->setAccount(QString::number(accountId));
+                setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, m_accountManager);
                 m_storage->addNotebook(notebook);
                 m_storageNeedsSave = true;
             } break;
