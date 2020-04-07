@@ -1,6 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2019 Open Mobile Platform LLC
+ ** Copyright (c) 2020 Open Mobile Platform LLC.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -18,35 +18,19 @@
  **
  ****************************************************************************/
 
-#ifndef BACKUPRESTOREOPTIONS_H
-#define BACKUPRESTOREOPTIONS_H
+#include "onedrivebackuprestoresyncadaptor.h"
 
-#include <QtCore/QString>
-
-namespace Buteo {
-    class SyncProfile;
+OneDriveBackupRestoreSyncAdaptor::OneDriveBackupRestoreSyncAdaptor(QObject *parent)
+    : OneDriveBackupOperationSyncAdaptor(SocialNetworkSyncAdaptor::BackupRestore, parent)
+{
+    setInitialActive(true);
 }
 
-// Basically a mirror of AccountSyncManager::BackupRestoreOptions.
-class BackupRestoreOptions
+OneDriveBackupRestoreSyncAdaptor::~OneDriveBackupRestoreSyncAdaptor()
 {
-public:
-    enum Operation {
-        DirectoryListing,
-        Upload,
-        Download
-    };
+}
 
-    Operation operation = DirectoryListing;
-    QString localDirPath;
-    QString remoteDirPath;
-    QString fileName;
-
-    bool copyToProfile(Buteo::SyncProfile *syncProfile);
-
-    static BackupRestoreOptions fromProfile(Buteo::SyncProfile *syncProfile, bool *ok);
-
-    static QString backupDeviceName();
-};
-
-#endif // BACKUPRESTOREOPTIONS_H
+OneDriveBackupOperationSyncAdaptor::Operation OneDriveBackupRestoreSyncAdaptor::operation() const
+{
+    return OneDriveBackupOperationSyncAdaptor::BackupRestore;
+}
