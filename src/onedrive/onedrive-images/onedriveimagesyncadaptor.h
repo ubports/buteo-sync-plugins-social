@@ -55,24 +55,21 @@ protected: // implementing OneDriveDataTypeSyncAdaptor interface
     void finalize(int accountId);
 
 private:
-    void queryCameraRoll(int accountId, const QString &accessToken);
-    void requestAlbums(int accountId, const QString &accessToken);
-    void requestImages(int accountId, const QString &accessToken,
-                       const QString &albumId, const QString &userId,
-                       int imageCount = 0, const QString &nextRound = QString());
-    void possiblyAddNewUser(const QString &fbUserId, int accountId, const QString &accessToken);
+    void requestResource(int accountId, const QString &accessToken, const QString &onedriveResource = QString());
+    void requestNextLink(int accountId, const QString &accessToken, const QString &nextLink, bool isDefaultResource);
 
 private Q_SLOTS:
-    void cameraRollFinishedHandler();
-    void albumsFinishedHandler();
-    void imagesFinishedHandler();
-    void userFinishedHandler();
+    void resourceFinishedHandler();
 
 private:
     struct AlbumData {
         AlbumData();
-        AlbumData(QString albumId, QString userId, QDateTime createdTime,
-                  QDateTime updatedTime, QString albumName, int imageCount);
+        AlbumData(const QString &albumId,
+                  const QString &userId,
+                  const QDateTime &createdTime,
+                  const QDateTime &updatedTime,
+                  const QString &albumName,
+                  int imageCount);
         AlbumData(const AlbumData &other);
 
         QString albumId;
@@ -83,31 +80,51 @@ private:
         int imageCount;
     };
 
+    struct ImageData {
+        ImageData();
+        ImageData(const QString &photoId,
+                  const QString &albumId,
+                  const QString &userId,
+                  const QDateTime &createdTime,
+                  const QDateTime &updatedTime,
+                  const QString &photoName,
+                  int imageWidth,
+                  int imageHeight,
+                  const QString &thumbnailUrl,
+                  const QString &imageSourceUrl,
+                  const QString &description);
+        ImageData(const ImageData &other);
+
+        QString photoId;
+        QString albumId;
+        QString userId;
+        QDateTime createdTime;
+        QDateTime updatedTime;
+        QString photoName;
+        int imageWidth;
+        int imageHeight;
+        QString thumbnailUrl;
+        QString imageSourceUrl;
+        QString description;
+    };
+
 private:
     // for server-side removal detection.
     bool initRemovalDetectionLists(int accountId);
     void clearRemovalDetectionLists();
     void checkRemovedImages(const QString &fbAlbumId);
     QMap<QString, OneDriveAlbum::ConstPtr> m_cachedAlbums;
-    QMap<QString, QSet<QString> > m_serverImageIds;
+    QSet<QString> m_seenAlbums;
+    QMap<QString, AlbumData> m_albumData;
+    QMap<QString, ImageData> m_imageData;
+    QMap<QString, QSet<QString> > m_serverAlbumImageIds;
     QStringList m_removedImages;
 
-    OneDriveImagesDatabase m_db;
+    QString m_userId;
+    QString m_userDisplayName;
 
-    // image variants with different dimentions
-    class ImageSource {
-    public:
-        ImageSource(int width, int height, const QString &sourceUrl) : width(width), height(height), sourceUrl(sourceUrl) {}
-        bool operator<(const ImageSource &other) const { return this->width < other.width; }
-        int width;
-        int height;
-        QString sourceUrl;
-    };
-    bool determineOptimalDimensions();
-    int m_optimalThumbnailWidth;
-    int m_optimalImageWidth;
+    OneDriveImagesDatabase m_db;
     SocialImagesDatabase m_imageCacheDb;
-    QMap<QString, AlbumData> m_albumData;
 };
 
 #endif // ONEDRIVEIMAGESYNCADAPTOR_H

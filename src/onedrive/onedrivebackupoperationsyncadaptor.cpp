@@ -262,7 +262,7 @@ void OneDriveBackupOperationSyncAdaptor::beginListOperation(int accountId, const
         return;
     }
 
-    QUrl url(QStringLiteral("https://api.onedrive.com/v1.0/drive/special/approot:/%1:/").arg(remoteDirPath));
+    QUrl url(QStringLiteral("%1/%2:/%3:/").arg(api(), QStringLiteral("drive/special/approot"), remoteDirPath));
     QUrlQuery query(url);
     QList<QPair<QString, QString> > queryItems;
     queryItems.append(QPair<QString, QString>(QStringLiteral("expand"), QStringLiteral("children")));
@@ -399,7 +399,7 @@ void OneDriveBackupOperationSyncAdaptor::initialiseAppFolderRequest(int accountI
     // initialise the app folder and get the remote id of the drive/special/approot path.
     // e.g., let's say we have a final path like: drive/special/approot/Backups/ABCDEFG/backup.tar
     // this request will get us the id of the drive/special/approot bit.
-    QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/drive/special/approot"));
+    QUrl url = QUrl(QStringLiteral("%1/%2").arg(api(), QStringLiteral("drive/special/approot")));
 
     QNetworkRequest req(url);
     req.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
@@ -494,7 +494,7 @@ void OneDriveBackupOperationSyncAdaptor::getRemoteFolderMetadata(int accountId, 
     // e.g., let's say we have a final path like: drive/special/approot/Backups/ABCDEFG/backup.tar
     // this request will, when first called, be passed the remote id of the drive/special/approot bit
     // so we request the metadata for that (expanding children)
-    QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/drive/items/%1").arg(parentId));
+    QUrl url = QUrl(QStringLiteral("%1/%2/%3").arg(api(), QStringLiteral("drive/items"), parentId));
     QUrlQuery query(url);
     QList<QPair<QString, QString> > queryItems;
     queryItems.append(QPair<QString, QString>(QStringLiteral("expand"), QStringLiteral("children")));
@@ -622,7 +622,7 @@ void OneDriveBackupOperationSyncAdaptor::requestData(int accountId, const QStrin
         // directory or file info request.  We use the path and sign with access token.
         if (remoteFile.isEmpty()) {
             // directory request.  expand the children.
-            url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/%1:/%2:/").arg(m_remoteAppDir).arg(remotePath));
+            url = QUrl(QStringLiteral("%1/%2:/%3:/").arg(api(), m_remoteAppDir, remotePath));
             QUrlQuery query(url);
             QList<QPair<QString, QString> > queryItems;
             queryItems.append(QPair<QString, QString>(QStringLiteral("expand"), QStringLiteral("children")));
@@ -631,7 +631,7 @@ void OneDriveBackupOperationSyncAdaptor::requestData(int accountId, const QStrin
             SOCIALD_LOG_DEBUG("performing directory request:" << url.toString());
         } else {
             // file request, download its metadata.  That will contain a content URL which we will redirect to.
-            url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/%1:/%2/%3").arg(m_remoteAppDir).arg(remotePath).arg(remoteFile));
+            url = QUrl(QStringLiteral("%1/%2:/%3/%4").arg(api(), m_remoteAppDir, remotePath, remoteFile));
             SOCIALD_LOG_DEBUG("performing file request:" << url.toString());
         }
     }
@@ -801,7 +801,7 @@ void OneDriveBackupOperationSyncAdaptor::uploadData(int accountId, const QString
             "}").arg(remoteDir);
         QByteArray data = createFolderJson.toUtf8();
 
-        QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/drive/items/%1/children").arg(remoteParentId));
+        QUrl url = QUrl(QStringLiteral("%1/drive/items/%2/children").arg(api(), remoteParentId));
         intermediatePath = QStringLiteral("%1/%2").arg(remoteParentPath).arg(remoteDir);
         QNetworkRequest request(url);
         request.setHeader(QNetworkRequest::ContentLengthHeader, data.size());
@@ -815,8 +815,8 @@ void OneDriveBackupOperationSyncAdaptor::uploadData(int accountId, const QString
         reply = m_networkAccessManager->post(request, data);
     } else {
         // attempt to create a remote file.
-        QUrl url = QUrl(QStringLiteral("https://api.onedrive.com/v1.0/%1:/%2/%3:/content").arg(m_remoteAppDir).arg(remotePath).arg(localFile));
-        QString localFileName = QStringLiteral("%1/%2").arg(localPath).arg(localFile);
+        QUrl url = QUrl(QStringLiteral("%1/%2:/%3/%4:/content").arg(api(), m_remoteAppDir, remotePath, localFile));
+        QString localFileName = QStringLiteral("%1/%2").arg(localPath, localFile);
         QFile f(localFileName, this);
          if(!f.open(QIODevice::ReadOnly)){
              SOCIALD_LOG_ERROR("unable to open local file:" << localFileName << "for upload to OneDrive Backup with account:" << accountId);

@@ -66,12 +66,6 @@ void OneDriveDataTypeSyncAdaptor::sync(const QString &dataTypeString, int accoun
         return;
     }
 
-    if (clientSecret().isEmpty()) {
-        SOCIALD_LOG_ERROR("client secret couldn't be retrieved for OneDrive account" << accountId);
-        setStatus(SocialNetworkSyncAdaptor::Error);
-        return;
-    }
-
     setStatus(SocialNetworkSyncAdaptor::Busy);
     updateDataForAccount(accountId);
     SOCIALD_LOG_DEBUG("successfully triggered sync with profile:" << m_accountSyncProfile->name());
@@ -140,24 +134,15 @@ QString OneDriveDataTypeSyncAdaptor::api() const
 QString OneDriveDataTypeSyncAdaptor::clientId()
 {
     if (!m_triedLoading) {
-        loadClientIdAndSecret();
+        loadClientId();
     }
     return m_clientId;
 }
 
-QString OneDriveDataTypeSyncAdaptor::clientSecret()
-{
-    if (!m_triedLoading) {
-        loadClientIdAndSecret();
-    }
-    return m_clientSecret;
-}
-
-void OneDriveDataTypeSyncAdaptor::loadClientIdAndSecret()
+void OneDriveDataTypeSyncAdaptor::loadClientId()
 {
     m_triedLoading = true;
     char *cClientId = NULL;
-    char *cClientSecret = NULL;
 
     int cSuccess = SailfishKeyProvider_storedKey("onedrive", "onedrive-sync", "client_id", &cClientId);
     if (cClientId == NULL) {
@@ -169,17 +154,6 @@ void OneDriveDataTypeSyncAdaptor::loadClientIdAndSecret()
 
     m_clientId = QLatin1String(cClientId);
     free(cClientId);
-
-    cSuccess = SailfishKeyProvider_storedKey("onedrive", "onedrive-sync", "client_secret", &cClientSecret);
-    if (cClientSecret == NULL) {
-        return;
-    } else if (cSuccess != 0) {
-        free(cClientSecret);
-        return;
-    }
-
-    m_clientSecret = QLatin1String(cClientSecret);
-    free(cClientSecret);
 }
 
 void OneDriveDataTypeSyncAdaptor::setCredentialsNeedUpdate(Accounts::Account *account)
@@ -195,9 +169,9 @@ void OneDriveDataTypeSyncAdaptor::setCredentialsNeedUpdate(Accounts::Account *ac
 
 void OneDriveDataTypeSyncAdaptor::signIn(Accounts::Account *account)
 {
-    // Fetch consumer key and secret from keyprovider
+    // Fetch consumer key from keyprovider
     int accountId = account->id();
-    if (!checkAccount(account) || clientId().isEmpty() || clientSecret().isEmpty()) {
+    if (!checkAccount(account) || clientId().isEmpty()) {
         decrementSemaphore(accountId);
         return;
     }
@@ -225,7 +199,6 @@ void OneDriveDataTypeSyncAdaptor::signIn(Accounts::Account *account)
 
     QVariantMap signonSessionData = accSrv.authData().parameters();
     signonSessionData.insert("ClientId", clientId());
-    signonSessionData.insert("ClientSecret", clientSecret());
     signonSessionData.insert("UiPolicy", SignOn::NoUserInteractionPolicy);
 
     connect(session, SIGNAL(response(SignOn::SessionData)),
