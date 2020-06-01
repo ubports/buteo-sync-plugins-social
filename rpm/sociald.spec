@@ -2,7 +2,6 @@ Name:       sociald
 Summary:    Syncs device data from social services
 Version:    0.2.21
 Release:    1
-Group:      System/Libraries
 License:    LGPLv2
 URL:        https://git.sailfishos.org/mer-core/buteo-sync-plugins-social
 Source0:    %{name}-%{version}.tar.bz2
@@ -33,7 +32,7 @@ A Buteo plugin which provides data synchronization with various social services.
 #out-of-process-plugin form:
 %{_libdir}/buteo-plugins-qt5/oopp/sociald-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libsociald-client.so
+#%%{_libdir}/buteo-plugins-qt5/libsociald-client.so
 %config %{_sysconfdir}/buteo/profiles/client/sociald.xml
 %config %{_sysconfdir}/buteo/profiles/sync/sociald.All.xml
 %license COPYING
@@ -49,9 +48,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files facebook-calendars
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/facebook-calendars-client
+%{_libdir}/buteo-plugins-qt5/oopp/facebook-calendars-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libfacebook-calendars-client.so
+#%%{_libdir}/buteo-plugins-qt5/libfacebook-calendars-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-calendars.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Calendars.xml
 
@@ -79,9 +78,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files facebook-contacts
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/facebook-contacts-client
+%{_libdir}/buteo-plugins-qt5/oopp/facebook-contacts-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libfacebook-contacts-client.so
+#%%{_libdir}/buteo-plugins-qt5/libfacebook-contacts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-contacts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Contacts.xml
 
@@ -106,9 +105,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files facebook-images
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/facebook-images-client
+%{_libdir}/buteo-plugins-qt5/oopp/facebook-images-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libfacebook-images-client.so
+#%%{_libdir}/buteo-plugins-qt5/libfacebook-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Images.xml
 
@@ -134,9 +133,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files facebook-signon
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/facebook-signon-client
+%{_libdir}/buteo-plugins-qt5/oopp/facebook-signon-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libfacebook-signon-client.so
+#%%{_libdir}/buteo-plugins-qt5/libfacebook-signon-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-signon.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Signon.xml
 
@@ -164,9 +163,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files google-calendars
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/google-calendars-client
+%{_libdir}/buteo-plugins-qt5/oopp/google-calendars-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libgoogle-calendars-client.so
+#%%{_libdir}/buteo-plugins-qt5/libgoogle-calendars-client.so
 %config %{_sysconfdir}/buteo/profiles/client/google-calendars.xml
 %config %{_sysconfdir}/buteo/profiles/sync/google.Calendars.xml
 
@@ -194,9 +193,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files google-contacts
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/google-contacts-client
+%{_libdir}/buteo-plugins-qt5/oopp/google-contacts-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libgoogle-contacts-client.so
+#%%{_libdir}/buteo-plugins-qt5/libgoogle-contacts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/google-contacts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/google.Contacts.xml
 
@@ -222,9 +221,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files google-signon
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/google-signon-client
+%{_libdir}/buteo-plugins-qt5/oopp/google-signon-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libgoogle-signon-client.so
+#%%{_libdir}/buteo-plugins-qt5/libgoogle-signon-client.so
 %config %{_sysconfdir}/buteo/profiles/client/google-signon.xml
 %config %{_sysconfdir}/buteo/profiles/sync/google.Signon.xml
 
@@ -254,9 +253,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files twitter-notifications
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/twitter-notifications-client
+%{_libdir}/buteo-plugins-qt5/oopp/twitter-notifications-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libtwitter-notifications-client.so
+#%%{_libdir}/buteo-plugins-qt5/libtwitter-notifications-client.so
 %config %{_sysconfdir}/buteo/profiles/client/twitter-notifications.xml
 %config %{_sysconfdir}/buteo/profiles/sync/twitter.Notifications.xml
 %{_datadir}/lipstick/notificationcategories/x-nemo.social.twitter.mention.conf
@@ -288,9 +287,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files twitter-posts
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/twitter-posts-client
+%{_libdir}/buteo-plugins-qt5/oopp/twitter-posts-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libtwitter-posts-client.so
+#%%{_libdir}/buteo-plugins-qt5/libtwitter-posts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/twitter-posts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/twitter.Posts.xml
 %{_datadir}/lipstick/notificationcategories/x-nemo.social.twitter.tweet.conf
@@ -317,9 +316,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files onedrive-signon
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/onedrive-signon-client
+%{_libdir}/buteo-plugins-qt5/oopp/onedrive-signon-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libonedrive-signon-client.so
+#%%{_libdir}/buteo-plugins-qt5/libonedrive-signon-client.so
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-signon.xml
 %config %{_sysconfdir}/buteo/profiles/sync/onedrive.Signon.xml
 
@@ -349,9 +348,9 @@ Requires: %{name} = %{version}-%{release}
 %{_datadir}/lipstick/notificationcategories/x-nemo.social.vk.statuspost.conf
 #%{_datadir}/translations/lipstick-jolla-home-vk_eng_en.qm
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/vk-posts-client
+%{_libdir}/buteo-plugins-qt5/oopp/vk-posts-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libvk-posts-client.so
+#%%{_libdir}/buteo-plugins-qt5/libvk-posts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-posts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Posts.xml
 
@@ -375,9 +374,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files dropbox-images
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/dropbox-images-client
+%{_libdir}/buteo-plugins-qt5/oopp/dropbox-images-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libdropbox-images-client.so
+#%%{_libdir}/buteo-plugins-qt5/libdropbox-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/dropbox-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/dropbox.Images.xml
 
@@ -401,9 +400,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files onedrive-images
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/onedrive-images-client
+%{_libdir}/buteo-plugins-qt5/oopp/onedrive-images-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libonedrive-images-client.so
+#%%{_libdir}/buteo-plugins-qt5/libonedrive-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/onedrive.Images.xml
 
@@ -430,13 +429,13 @@ Requires: %{name} = %{version}-%{release}
 
 %files onedrive-backup
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/onedrive-backup-client
-/usr/lib/buteo-plugins-qt5/oopp/onedrive-backupquery-client
-/usr/lib/buteo-plugins-qt5/oopp/onedrive-backuprestore-client
+%{_libdir}/buteo-plugins-qt5/oopp/onedrive-backup-client
+%{_libdir}/buteo-plugins-qt5/oopp/onedrive-backupquery-client
+%{_libdir}/buteo-plugins-qt5/oopp/onedrive-backuprestore-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libonedrive-backup-client.so
-#/usr/lib/buteo-plugins-qt5/libonedrive-backupquery-client.so
-#/usr/lib/buteo-plugins-qt5/libonedrive-backuprestore-client.so
+#%%{_libdir}/buteo-plugins-qt5/libonedrive-backup-client.so
+#%%{_libdir}/buteo-plugins-qt5/libonedrive-backupquery-client.so
+#%%{_libdir}/buteo-plugins-qt5/libonedrive-backuprestore-client.so
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-backup.xml
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-backupquery.xml
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-backuprestore.xml
@@ -471,13 +470,13 @@ Requires: %{name} = %{version}-%{release}
 
 %files dropbox-backup
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/dropbox-backup-client
-/usr/lib/buteo-plugins-qt5/oopp/dropbox-backupquery-client
-/usr/lib/buteo-plugins-qt5/oopp/dropbox-backuprestore-client
+%{_libdir}/buteo-plugins-qt5/oopp/dropbox-backup-client
+%{_libdir}/buteo-plugins-qt5/oopp/dropbox-backupquery-client
+%{_libdir}/buteo-plugins-qt5/oopp/dropbox-backuprestore-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libdropbox-backup-client.so
-#/usr/lib/buteo-plugins-qt5/libdropbox-backupquery-client.so
-#/usr/lib/buteo-plugins-qt5/libdropbox-backuprestore-client.so
+#%%{_libdir}/buteo-plugins-qt5/libdropbox-backup-client.so
+#%%{_libdir}/buteo-plugins-qt5/libdropbox-backupquery-client.so
+#%%{_libdir}/buteo-plugins-qt5/libdropbox-backuprestore-client.so
 %config %{_sysconfdir}/buteo/profiles/client/dropbox-backup.xml
 %config %{_sysconfdir}/buteo/profiles/client/dropbox-backupquery.xml
 %config %{_sysconfdir}/buteo/profiles/client/dropbox-backuprestore.xml
@@ -513,9 +512,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files vk-notifications
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/vk-notifications-client
+%{_libdir}/buteo-plugins-qt5/oopp/vk-notifications-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libvk-notifications-client.so
+#%%{_libdir}/buteo-plugins-qt5/libvk-notifications-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-notifications.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Notifications.xml
 %{_datadir}/lipstick/notificationcategories/x-nemo.social.vk.notification.conf
@@ -543,9 +542,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files vk-calendars
 #out-of-proces-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/vk-calendars-client
+%{_libdir}/buteo-plugins-qt5/oopp/vk-calendars-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libvk-calendars-client.so
+#%%{_libdir}/buteo-plugins-qt5/libvk-calendars-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-calendars.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Calendars.xml
 
@@ -573,9 +572,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files vk-contacts
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/vk-contacts-client
+%{_libdir}/buteo-plugins-qt5/oopp/vk-contacts-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libvk-contacts-client.so
+#%%{_libdir}/buteo-plugins-qt5/libvk-contacts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-contacts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Contacts.xml
 
@@ -600,9 +599,9 @@ Requires: %{name} = %{version}-%{release}
 
 %files vk-images
 #out-of-process-plugin form:
-/usr/lib/buteo-plugins-qt5/oopp/vk-images-client
+%{_libdir}/buteo-plugins-qt5/oopp/vk-images-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/libvk-images-client.so
+#%%{_libdir}/buteo-plugins-qt5/libvk-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Images.xml
 
@@ -634,7 +633,7 @@ systemctl-user try-restart msyncd.service || :
 #out-of-process-plugin form:
 %{_libdir}/buteo-plugins-qt5/oopp/knowncontacts-client
 #in-process-plugin form:
-#/usr/lib/buteo-plugins-qt5/knowncontacts-client.so
+#%%{_libdir}/buteo-plugins-qt5/knowncontacts-client.so
 %{_sysconfdir}/buteo/profiles/client/knowncontacts.xml
 %{_sysconfdir}/buteo/profiles/sync/knowncontacts.Contacts.xml
 
@@ -642,7 +641,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package ts-devel
 Summary:    Translation source for sociald
-Group:      System/Applications
 
 %description ts-devel
 %{summary}.
@@ -653,7 +651,6 @@ Group:      System/Applications
 
 %package tests
 Summary:    Automatable tests for sociald
-Group:      System/Applications
 BuildRequires:  pkgconfig(Qt5Test)
 Requires:   qt5-qtdeclarative-devel-tools
 Requires:   qt5-qtdeclarative-import-qttest

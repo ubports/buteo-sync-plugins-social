@@ -31,7 +31,7 @@ QMAKE_CXXFLAGS = -Wall \
     -O2 -finline-functions
 
 TEMPLATE = app
-target.path = /usr/lib/buteo-plugins-qt5/oopp
+target.path = $$[QT_INSTALL_LIBS]/buteo-plugins-qt5/oopp
 DEFINES += CLIENT_PLUGIN
 INCLUDE_DIR = $$system(pkg-config --cflags buteosyncfw5|cut -f2 -d'I')
 
