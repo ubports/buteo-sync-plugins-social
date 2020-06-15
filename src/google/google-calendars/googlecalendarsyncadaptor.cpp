@@ -1214,7 +1214,6 @@ void GoogleCalendarSyncAdaptor::beginSync(int accountId, const QString &accessTo
 void GoogleCalendarSyncAdaptor::requestCalendars(int accountId, const QString &accessToken, bool needCleanSync, const QString &pageToken)
 {
     QList<QPair<QString, QString> > queryItems;
-    queryItems.append(QPair<QString, QString>(QString::fromLatin1("key"), accessToken));
     if (!pageToken.isEmpty()) { // continuation request
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("pageToken"),
                                                   pageToken));
@@ -1438,7 +1437,6 @@ void GoogleCalendarSyncAdaptor::requestEvents(int accountId, const QString &acce
     }
 
     QList<QPair<QString, QString> > queryItems;
-    queryItems.append(QPair<QString, QString>(QString::fromLatin1("key"), accessToken));
     if (!needCleanSync) { // delta update request
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("syncToken"), syncToken));
     } else { // clean sync request
