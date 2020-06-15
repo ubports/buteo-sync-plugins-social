@@ -50,12 +50,12 @@ contains(DEFINES, 'SOCIALD_USE_QTPIM') {
     !contains (DEFINES, OUT_OF_PROCESS_PLUGIN) {
         TEMPLATE = lib
         CONFIG += plugin
-        target.path = /usr/lib/buteo-plugins-qt5
+        target.path = $$[QT_INSTALL_LIBS]/buteo-plugins-qt5
         message("building" $$TARGET "as in-process plugin")
     }
     contains (DEFINES, OUT_OF_PROCESS_PLUGIN) {
         TEMPLATE = app
-        target.path = /usr/lib/buteo-plugins-qt5/oopp
+        target.path = $$[QT_INSTALL_LIBS]/buteo-plugins-qt5/oopp
         message("building" $$TARGET "as out-of-process plugin")
 
         DEFINES += CLIENT_PLUGIN
