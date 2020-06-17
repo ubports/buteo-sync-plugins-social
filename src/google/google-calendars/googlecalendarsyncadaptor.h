@@ -115,7 +115,8 @@ private:
                                       const CalendarInfo &calendarInfo,
                                       const QString &serverCalendarId,
                                       int accountId,
-                                      Accounts::Manager *accountManager);
+                                      const QString &syncProfile,
+                                      const QString &ownerEmail);
 
 private Q_SLOTS:
     void calendarsFinishedHandler();

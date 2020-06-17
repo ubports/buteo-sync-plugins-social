@@ -975,21 +975,6 @@ void setLastSyncRequiresCleanSync(QList<int> accountIds)
     settingsFile.sync();
 }
 
-QString ownerEmailAddress(Accounts::Manager *manager, int accountId)
-{
-    QString emailAddress;
-    Accounts::Account *account = Accounts::Account::fromId(manager, accountId, Q_NULLPTR);
-    if (!account) {
-        SOCIALD_LOG_ERROR("unable to load Google account" << accountId << "to retrieve calendar sync tokens");
-    } else {
-        Accounts::Service srv(manager->service(QStringLiteral("google-gmail")));
-        account->selectService(srv);
-        emailAddress = account->valueAsString(QStringLiteral("emailaddress"));
-        account->deleteLater();
-    }
-    return emailAddress;
-}
-
 }
 
 GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
@@ -2271,17 +2256,17 @@ void GoogleCalendarSyncAdaptor::setCalendarProperties(
         const CalendarInfo &calendarInfo,
         const QString &serverCalendarId,
         int accountId,
-        Accounts::Manager *accountManager)
+        const QString &syncProfile,
+        const QString &ownerEmail)
 {
     notebook->setIsReadOnly(false);
     notebook->setName(calendarInfo.summary);
     notebook->setColor(calendarInfo.color);
     notebook->setDescription(calendarInfo.description);
     notebook->setPluginName(QStringLiteral("google"));
+    notebook->setSyncProfile(syncProfile);
     notebook->setCustomProperty(NOTEBOOK_SERVER_ID_PROPERTY, serverCalendarId);
-    if (calendarInfo.access == GoogleCalendarSyncAdaptor::Owner) {
-        notebook->setCustomProperty(NOTEBOOK_EMAIL_PROPERTY, ownerEmailAddress(accountManager, accountId));
-    }
+    notebook->setCustomProperty(NOTEBOOK_EMAIL_PROPERTY, ownerEmail);
     // extra calendars have their own email addresses. using this property to pass it forward.
     notebook->setSharedWith(QStringList() << serverCalendarId);
     notebook->setAccount(QString::number(accountId));
@@ -2290,19 +2275,41 @@ void GoogleCalendarSyncAdaptor::setCalendarProperties(
 void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
 {
     SOCIALD_LOG_DEBUG("applying all remote changes to local database");
+    QString emailAddress;
+    QString syncProfile;
+    Accounts::Account *account = Accounts::Account::fromId(m_accountManager, accountId, Q_NULLPTR);
+    if (!account) {
+        SOCIALD_LOG_ERROR("unable to load Google account" << accountId << "to retrieve settings");
+    } else {
+        account->selectService(m_accountManager->service(QStringLiteral("google-gmail")));
+        emailAddress = account->valueAsString(QStringLiteral("emailaddress"));
+        account->selectService(m_accountManager->service(QStringLiteral("google-calendars")));
+        syncProfile = account->valueAsString(QStringLiteral("google.Calendars/profile_id"));
+        account->deleteLater();
+    }
     foreach (const QString &serverCalendarId, m_serverCalendarIdToCalendarInfo[accountId].keys()) {
-        CalendarInfo calendarInfo = m_serverCalendarIdToCalendarInfo[accountId].value(serverCalendarId);
+        const CalendarInfo calendarInfo = m_serverCalendarIdToCalendarInfo[accountId].value(serverCalendarId);
+        const QString ownerEmail = (calendarInfo.access == GoogleCalendarSyncAdaptor::Owner) ? emailAddress : QString();
 
         switch (calendarInfo.change) {
             case GoogleCalendarSyncAdaptor::NoChange: {
                 // No changes required.  Note that this just applies to the notebook metadata;
                 // there may be incidences belonging to this notebook which need modification.
                 SOCIALD_LOG_DEBUG("No metadata changes required for local notebook for server calendar:" << serverCalendarId);
+                mKCal::Notebook::Ptr notebook = notebookForCalendarId(accountId, serverCalendarId);
+                // We ensure anyway property values for notebooks created without.
+                if (notebook && notebook->syncProfile() != syncProfile) {
+                    SOCIALD_LOG_DEBUG("Adding missing sync profile label.");
+                    notebook->setSyncProfile(syncProfile);
+                    m_storage->updateNotebook(notebook);
+                    // Actually, we don't need to flag m_storageNeedsSave since
+                    // notebook operations are immediate on storage.
+                }
             } break;
             case GoogleCalendarSyncAdaptor::Insert: {
                 SOCIALD_LOG_DEBUG("Adding local notebook for new server calendar:" << serverCalendarId);
                 mKCal::Notebook::Ptr notebook = mKCal::Notebook::Ptr(new mKCal::Notebook);
-                setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, m_accountManager);
+                setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, syncProfile, ownerEmail);
                 m_storage->addNotebook(notebook);
                 m_storageNeedsSave = true;
             } break;
@@ -2315,7 +2322,7 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
                                                         // apply other database modifications if possible, in order to leave
                                                         // the local database in a usable state even after failed sync.
                 } else {
-                    setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, m_accountManager);
+                    setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, syncProfile, ownerEmail);
                     m_storage->updateNotebook(notebook);
                     m_storageNeedsSave = true;
                 }
@@ -2355,7 +2362,7 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally(int accountId)
                 if (!notebookUid.isEmpty()) {
                     notebook->setUid(notebookUid);
                 }
-                setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, m_accountManager);
+                setCalendarProperties(notebook, calendarInfo, serverCalendarId, accountId, syncProfile, ownerEmail);
                 m_storage->addNotebook(notebook);
                 m_storageNeedsSave = true;
             } break;
