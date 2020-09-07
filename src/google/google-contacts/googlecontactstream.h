@@ -35,7 +35,6 @@
 
 #include <QContact>
 #include <QContactDetail>
-#include <QContactSyncTarget>
 #include <QContactName>
 #include <QContactAddress>
 #include <QContactAnniversary>
