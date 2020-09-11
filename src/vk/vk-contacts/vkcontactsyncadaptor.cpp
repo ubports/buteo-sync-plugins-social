@@ -254,9 +254,9 @@ void VKContactSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSyncAd
                           QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
                           true,
                           &error)) {
-        SOCIALD_LOG_INFO("purged account" << pid << "and successfully removed collection" << friendCollectionId);
+        SOCIALD_LOG_INFO("purged account" << oldId << "and successfully removed collection" << friendCollectionId);
     } else {
-        SOCIALD_LOG_ERROR("Failed to remove collection during purge of account" << pid
+        SOCIALD_LOG_ERROR("Failed to remove collection during purge of account" << oldId
                           << "error:" << error);
     }
 }
@@ -480,7 +480,7 @@ QList<QContact> VKContactSyncAdaptor::parseContacts(const QJsonArray &json, int 
         if (!obj.value("photo_max").toString().isEmpty()) {
             QContactAvatar avatar;
             avatar.setImageUrl(QUrl(obj.value("photo_max").toString()));
-            avatar.setValue(QContactAvatar__FieldAvatarMetadata, QStringLiteral("picture"));
+            avatar.setValue(QContactAvatar::FieldMetaData, QStringLiteral("picture"));
             saveNonexportableDetail(c, avatar);
         }
 
@@ -544,7 +544,7 @@ void VKContactSyncAdaptor::transformContactAvatars(QList<QContact> &remoteContac
             // we have a remote avatar which we need to transform.
             QContactAvatar avatar = curr.detail<QContactAvatar>();
             Q_FOREACH (const QContactAvatar &av, curr.details<QContactAvatar>()) {
-                if (av.value(QContactAvatar__FieldAvatarMetadata).toString() == QStringLiteral("picture")) {
+                if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
                     avatar = av;
                     break;
                 }
@@ -646,12 +646,12 @@ void VKContactSyncAdaptor::finalize(int accountId)
                     // we have downloaded the avatar for this contact, and need to update it.
                     QContactAvatar a;
                     Q_FOREACH (const QContactAvatar &av, c.details<QContactAvatar>()) {
-                        if (av.value(QContactAvatar__FieldAvatarMetadata).toString() == QStringLiteral("picture")) {
+                        if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
                             a = av;
                             break;
                         }
                     }
-                    a.setValue(QContactAvatar__FieldAvatarMetadata, QVariant::fromValue<QString>(QStringLiteral("picture")));
+                    a.setValue(QContactAvatar::FieldMetaData, QVariant::fromValue<QString>(QStringLiteral("picture")));
                     a.setImageUrl(it.value());
                     saveNonexportableDetail(c, a);
                     contactsToSave[c.detail<QContactGuid>().guid()] = c;

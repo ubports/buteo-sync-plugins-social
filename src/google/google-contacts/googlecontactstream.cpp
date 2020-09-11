@@ -346,7 +346,7 @@ void GoogleContactStream::handleAtomEntry()
                 // If it's an avatar, we grab it as a QContactAvatar detail
                 QContactAvatar avatar;
                 Q_FOREACH (const QContactAvatar &av, entryContact.details<QContactAvatar>()) {
-                    if (av.value(QContactAvatar__FieldAvatarMetadata).toString() == QStringLiteral("picture")) {
+                    if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
                         avatar = av;
                         break;
                     }
@@ -422,7 +422,7 @@ QString GoogleContactStream::handleEntryLink(QContactAvatar *avatar, bool *isAva
             && (mXmlReader->attributes().value("rel") == "http://schemas.google.com/contacts/2008/rel#photo")) {
         // this is an avatar photo for the contact entry
         avatar->setImageUrl(mXmlReader->attributes().value("href").toString());
-        avatar->setValue(QContactAvatar__FieldAvatarMetadata, QVariant::fromValue<QString>(QStringLiteral("picture")));
+        avatar->setValue(QContactAvatar::FieldMetaData, QVariant::fromValue<QString>(QStringLiteral("picture")));
         *isAvatar = true;
     }
 

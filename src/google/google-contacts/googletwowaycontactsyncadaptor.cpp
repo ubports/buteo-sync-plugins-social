@@ -824,7 +824,7 @@ void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &re
             // we have a remote avatar which we need to transform.
             QContactAvatar avatar = curr.detail<QContactAvatar>();
             Q_FOREACH (const QContactAvatar &av, curr.details<QContactAvatar>()) {
-                if (av.value(QContactAvatar__FieldAvatarMetadata).toString() == QStringLiteral("picture")) {
+                if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
                     avatar = av;
                     break;
                 }
@@ -958,12 +958,12 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
                 // we have downloaded the avatar for this contact, and need to update it.
                 QContactAvatar a;
                 Q_FOREACH (const QContactAvatar &av, c.details<QContactAvatar>()) {
-                    if (av.value(QContactAvatar__FieldAvatarMetadata).toString() == QStringLiteral("picture")) {
+                    if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
                         a = av;
                         break;
                     }
                 }
-                a.setValue(QContactAvatar__FieldAvatarMetadata, QVariant::fromValue<QString>(QStringLiteral("picture")));
+                a.setValue(QContactAvatar::FieldMetaData, QVariant::fromValue<QString>(QStringLiteral("picture")));
                 a.setImageUrl(it.value());
                 if (c.saveDetail(&a)) {
                     contactsToSave[c.detail<QContactGuid>().guid()] = c;

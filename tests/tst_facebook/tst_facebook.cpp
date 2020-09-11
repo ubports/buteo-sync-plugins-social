@@ -193,10 +193,10 @@ void tst_facebook::contacts()
                             : testfriendOne.details<QContactUrl>().at(0);
         QCOMPARE(linkUrl.url(), QString::fromLatin1("https://www.facebook.com/testfriendone"));
         QCOMPARE(websiteUrl.url(), QString::fromLatin1("http://friendone.test.com/"));
-        QContactAvatar coverAvatar = testfriendOne.details<QContactAvatar>().at(0).value(QContactAvatar__FieldAvatarMetadata) == QString::fromLatin1("cover")
+        QContactAvatar coverAvatar = testfriendOne.details<QContactAvatar>().at(0).value(QContactAvatar::FieldMetaData) == QString::fromLatin1("cover")
                                    ? testfriendOne.details<QContactAvatar>().at(0)
                                    : testfriendOne.details<QContactAvatar>().at(1);
-        QContactAvatar pictureAvatar = testfriendOne.details<QContactAvatar>().at(0).value(QContactAvatar__FieldAvatarMetadata) == QString::fromLatin1("cover")
+        QContactAvatar pictureAvatar = testfriendOne.details<QContactAvatar>().at(0).value(QContactAvatar::FieldMetaData) == QString::fromLatin1("cover")
                                    ? testfriendOne.details<QContactAvatar>().at(1)
                                    : testfriendOne.details<QContactAvatar>().at(0);
         QVERIFY(!coverAvatar.imageUrl().isEmpty());   // it'll be something generated.

@@ -496,7 +496,7 @@ QContact FacebookContactSyncAdaptor::parseContactDetails(const QJsonObject &blob
         bool foundCover = false;
         bool foundPicture = false;
         foreach (const QContactAvatar &avatar, contactAvatars) {
-            if (avatar.value(QContactAvatar__FieldAvatarMetadata) == QLatin1String("cover")) {
+            if (avatar.value(QContactAvatar::FieldMetaData) == QLatin1String("cover")) {
                 foundCover = true;
                 if (cover.isEmpty()) {
                     // needs to be removed.
@@ -516,7 +516,7 @@ QContact FacebookContactSyncAdaptor::parseContactDetails(const QJsonObject &blob
                     contactAvatar.setImageUrl(avatarFileName);
                     SAVE_DETAIL(contactAvatar);
                 }
-            } else if (avatar.value(QContactAvatar__FieldAvatarMetadata) == QLatin1String("picture")) {
+            } else if (avatar.value(QContactAvatar::FieldMetaData) == QLatin1String("picture")) {
                 foundPicture = true;
                 if (picture.isEmpty()) {
                     // needs to be removed.
@@ -551,7 +551,7 @@ QContact FacebookContactSyncAdaptor::parseContactDetails(const QJsonObject &blob
             // needs to be updated.  we set the value to be the (future) image filename.
             QContactAvatar contactAvatar;
             contactAvatar.setImageUrl(avatarFileName);
-            contactAvatar.setValue(QContactAvatar__FieldAvatarMetadata, QLatin1String("cover"));
+            contactAvatar.setValue(QContactAvatar::FieldMetaData, QLatin1String("cover"));
             SAVE_DETAIL(contactAvatar);
         }
         if (!foundPicture && !picture.isEmpty()) {
@@ -567,7 +567,7 @@ QContact FacebookContactSyncAdaptor::parseContactDetails(const QJsonObject &blob
             // needs to be updated.  we set the value to be the (future) image filename.
             QContactAvatar contactAvatar;
             contactAvatar.setImageUrl(avatarFileName);
-            contactAvatar.setValue(QContactAvatar__FieldAvatarMetadata, QLatin1String("picture"));
+            contactAvatar.setValue(QContactAvatar::FieldMetaData, QLatin1String("picture"));
             SAVE_DETAIL(contactAvatar);
         }
 
