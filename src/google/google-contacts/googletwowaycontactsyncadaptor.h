@@ -171,6 +171,8 @@ private:
     QMap<int, QMap<QString, QString> > m_contactEtags; // contact guid -> contact etag
     QMap<int, QMap<QString, QString> > m_contactIds; // contact guid -> contact id
     QMap<int, QMap<QString, QString> > m_contactAvatars; // contact guid -> remote avatar path
+    QMap<int, QMap<QString, QString> > m_avatarEtags;
+    QMap<int, QMap<QString, QString> > m_avatarImageUrls;
 
     QMap<int, int> m_apiRequestsRemaining;
     QMap<int, QMap<QString, QString> > m_queuedAvatarsForDownload; // contact guid -> remote avatar path

@@ -566,7 +566,7 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
         return;
     }
 
-    // for each of the addmods, we need to fixup the contact avatars.
+    // download avatars for new and modified contacts
     transformContactAvatars(m_remoteAdds[accountId], accountId, accessToken);
     transformContactAvatars(m_remoteMods[accountId], accountId, accessToken);
 
@@ -781,7 +781,7 @@ void GoogleTwoWayContactSyncAdaptor::queueOutstandingAvatars(int accountId, cons
         }
     }
 
-    SOCIALD_LOG_DEBUG("queued" << queuedCount << "avatars for download for account" << accountId);
+    SOCIALD_LOG_DEBUG("queued" << queuedCount << "outstanding avatars for download for account" << accountId);
 }
 
 bool GoogleTwoWayContactSyncAdaptor::queueAvatarForDownload(int accountId, const QString &accessToken, const QString &contactGuid, const QString &imageUrl)
@@ -819,45 +819,49 @@ void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &re
         // then later avatars will not be transformed.  TODO: fix this.
         // We also only bother to do this for contacts with a GUID, as we don't
         // store locally any contact without one.
-        QString contactGuid = curr.detail<QContactGuid>().guid();
-        if (curr.details<QContactAvatar>().size() && !contactGuid.isEmpty()) {
-            // we have a remote avatar which we need to transform.
-            QContactAvatar avatar = curr.detail<QContactAvatar>();
-            Q_FOREACH (const QContactAvatar &av, curr.details<QContactAvatar>()) {
-                if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
-                    avatar = av;
-                    break;
-                }
+        const QString contactGuid = curr.detail<QContactGuid>().guid();
+        if (contactGuid.isEmpty()) {
+            continue;
+        }
+
+        QContactAvatar avatar = curr.detail<QContactAvatar>();
+        const QString remoteImageUrl = avatar.imageUrl().toString();
+
+        if (remoteImageUrl.isEmpty()) {
+            // If the contact previously had an avatar, remove it.
+            const QString prevRemoteImageUrl = m_avatarImageUrls[accountId].value(contactGuid);
+
+            if (!prevRemoteImageUrl.isEmpty()) {
+                const QString savedLocalFile = GoogleContactImageDownloader::staticOutputFile(
+                        contactGuid, prevRemoteImageUrl);
+                QFile::remove(savedLocalFile);
             }
-            QString remoteImageUrl = avatar.imageUrl().toString();
-            if (!remoteImageUrl.isEmpty() && !avatar.imageUrl().isLocalFile()) {
+
+        } else {
+            // We have a remote avatar which we need to download.
+            const QString prevAvatarEtag = m_avatarEtags[accountId].value(contactGuid);
+            const QString newAvatarEtag = avatar.value(QContactAvatar::FieldMetaData).toString();
+            const bool isNewAvatar = prevAvatarEtag.isEmpty();
+            const bool isModifiedAvatar = !isNewAvatar && prevAvatarEtag != newAvatarEtag;
+
+            if (!isNewAvatar && !isModifiedAvatar) {
+                // Shouldn't happen as we won't get an avatar in the atom if it didn't change.
+                continue;
+            }
+
+            if (!avatar.imageUrl().isLocalFile()) {
                 // transform to a local file name.
-                QString localFileName = GoogleContactImageDownloader::staticOutputFile(
+                const QString localFileName = GoogleContactImageDownloader::staticOutputFile(
                         contactGuid, remoteImageUrl);
+                QFile::remove(localFileName);
 
-                // and trigger downloading the image, if it doesn't already exist.
-                // this means that we shouldn't download images needlessly after
-                // first sync, but it also means that if it updates/changes on the
-                // server side, we also won't retrieve any updated image.
-                if (QFile::exists(localFileName)) {
-                    QImageReader reader(localFileName);
-                    if (reader.canRead()) {
-                        // avatar image already exists, update the detail in the contact.
-                        avatar.setImageUrl(localFileName);
-                        curr.saveDetail(&avatar);
-                    } else {
-                        // not a valid image file.  Could be artifact from an error.
-                        QFile::remove(localFileName);
-                    }
-                }
+                // temporarily remove the avatar from the contact
+                m_contactAvatars[accountId].insert(contactGuid, remoteImageUrl);
+                curr.removeDetail(&avatar);
+                m_avatarEtags[accountId][contactGuid] = newAvatarEtag;
 
-                if (!QFile::exists(localFileName)) {
-                    // temporarily remove the avatar from the contact
-                    m_contactAvatars[accountId].insert(contactGuid, remoteImageUrl);
-                    curr.removeDetail(&avatar);
-                    // then trigger the download
-                    queueAvatarForDownload(accountId, accessToken, contactGuid, remoteImageUrl);
-                }
+                // then trigger the download
+                queueAvatarForDownload(accountId, accessToken, contactGuid, remoteImageUrl);
             }
         }
     }
@@ -901,7 +905,7 @@ void GoogleTwoWayContactSyncAdaptor::purgeAccount(int pid)
                                  << QContactDetail::TypeAvatar);
     const QList<QContact> savedContacts = m_contactManager->contacts(collectionFilter, QList<QContactSortOrder>(), fetchHint);
     for (const QContact &contact : savedContacts) {
-        const QContactAvatar avatar = pictureAvatar(contact);
+        const QContactAvatar avatar = contact.detail<QContactAvatar>();
         const QString imageUrl = avatar.imageUrl().toString();
         if (!imageUrl.isEmpty()) {
             if (!QFile::remove(imageUrl)) {
@@ -951,19 +955,14 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
         QMap<QString, QContact> contactsToSave;
         for (auto it = m_downloadedContactAvatars[accountId].constBegin();
                 it != m_downloadedContactAvatars[accountId].constEnd(); ++it) {
-            QContact c = findContact(savedContacts, it.key());
+            const QString &guid = it.key();
+            QContact c = findContact(savedContacts, guid);
             if (c.isEmpty()) {
-                SOCIALD_LOG_ERROR("Not saving avatar, cannot find contact with guid" << it.key());
+                SOCIALD_LOG_ERROR("Not saving avatar, cannot find contact with guid" << guid);
             } else {
                 // we have downloaded the avatar for this contact, and need to update it.
-                QContactAvatar a;
-                Q_FOREACH (const QContactAvatar &av, c.details<QContactAvatar>()) {
-                    if (av.value(QContactAvatar::FieldMetaData).toString() == QStringLiteral("picture")) {
-                        a = av;
-                        break;
-                    }
-                }
-                a.setValue(QContactAvatar::FieldMetaData, QVariant::fromValue<QString>(QStringLiteral("picture")));
+                QContactAvatar a = c.detail<QContactAvatar>();
+                a.setValue(QContactAvatar::FieldMetaData, m_avatarEtags[accountId].value(guid));
                 a.setImageUrl(it.value());
                 if (c.saveDetail(&a)) {
                     contactsToSave[c.detail<QContactGuid>().guid()] = c;
@@ -1069,6 +1068,8 @@ void GoogleTwoWayContactSyncAdaptor::readSyncStateData(const QContactCollection 
 
     m_contactEtags[accountId].clear();
     m_contactIds[accountId].clear();
+    m_avatarEtags[accountId].clear();
+
     for (const QContact &contact : savedContacts) {
         const QString contactGuid = contact.detail<QContactGuid>().guid();
         if (contactGuid.isEmpty()) {
@@ -1084,6 +1085,14 @@ void GoogleTwoWayContactSyncAdaptor::readSyncStateData(const QContactCollection 
 
         // m_contactIds
         m_contactIds[accountId][contactGuid] = contact.id().toString();
+
+        // m_avatarEtags
+        // m_avatarImageUrls
+        QContactAvatar avatar = contact.detail<QContactAvatar>();
+        if (!avatar.isEmpty()) {
+            m_avatarEtags[accountId][contactGuid] = avatar.value(QContactAvatar::FieldMetaData).toString();
+            m_avatarImageUrls[accountId][contactGuid] = avatar.imageUrl().toString();
+        }
     }
 }
 
