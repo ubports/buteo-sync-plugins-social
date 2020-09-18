@@ -23,6 +23,7 @@ Requires: systemd
 Requires(pre):  sailfish-setup
 Requires(post): systemd
 Obsoletes: sociald-facebook-notifications
+Obsoletes: sociald-facebook-contacts
 
 %description
 A Buteo plugin which provides data synchronization with various social services.
@@ -63,36 +64,6 @@ for user in $USERS; do
 done
 
 %post facebook-calendars
-systemctl-user try-restart msyncd.service || :
-
-
-%package facebook-contacts
-Summary:    Provides contact synchronisation with Facebook
-BuildRequires:  pkgconfig(Qt5Gui)
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
-Requires: %{name} = %{version}-%{release}
-
-%description facebook-contacts
-%{summary}
-
-%files facebook-contacts
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/facebook-contacts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libfacebook-contacts-client.so
-%config %{_sysconfdir}/buteo/profiles/client/facebook-contacts.xml
-%config %{_sysconfdir}/buteo/profiles/sync/facebook.Contacts.xml
-
-%pre facebook-contacts
-USERS=$(getent group users | cut -d ":" -f 4 | tr "," "\n")
-for user in $USERS; do
-    USERHOME=$(getent passwd ${user} | cut -d ":" -f 6)
-    rm -f ${USERHOME}/.cache/msyncd/sync/client/facebook-contacts.xml || :
-    rm -f ${USERHOME}/.cache/msyncd/sync/facebook.Contacts.xml || :
-done
-
-%post facebook-contacts
 systemctl-user try-restart msyncd.service || :
 
 
