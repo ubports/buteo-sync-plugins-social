@@ -70,6 +70,7 @@ namespace {
 const QString MyContactsCollectionName = QStringLiteral("Contacts");
 const QString CollectionKeyLastSync = QStringLiteral("last-sync-time");
 const QString CollectionKeyAtomId = QStringLiteral("atom-id");
+const QString UnsupportedElementsKey = QStringLiteral("unsupportedElements");
 
 QContactCollection findCollection(const QContactManager &contactManager, const QString &name, int accountId)
 {
@@ -197,8 +198,8 @@ void GoogleContactSqliteSyncAdaptor::storeRemoteChangesLocally(const QContactCol
 {
     Q_UNUSED(collection)
 
-    // Store state changes to the collection
-    q->storeSyncStateData(&m_collection);
+    // Do any collection updates as necessary before the collection is saved locally.
+    m_collection.setExtendedMetaData(CollectionKeyLastSync, QDateTime::currentDateTimeUtc());
 
     TwoWayContactSyncAdaptor::storeRemoteChangesLocally(m_collection, addedContacts, modifiedContacts, deletedContacts);
 }
@@ -310,7 +311,7 @@ void GoogleTwoWayContactSyncAdaptor::beginSync(int accountId, const QString &acc
         delete sqliteSync;
     }
     sqliteSync = new GoogleContactSqliteSyncAdaptor(accountId, this);
-    readSyncStateData(sqliteSync->m_collection);
+    loadCollection(sqliteSync->m_collection);
 
     if (!sqliteSync->startSync()) {
         sqliteSync->deleteLater();
@@ -449,12 +450,7 @@ void GoogleTwoWayContactSyncAdaptor::groupsFinishedHandler()
         requestData(accountId, startIndex, atom->nextEntriesUrl(), lastSyncTimestamp, ContactGroupRequest);
 
     } else {
-        // couldn't find the My Contacts group.
-        // We don't consider this a fatal error,
-        // instead we just refuse to upsync new contacts.
-        SOCIALD_LOG_INFO("unable to find My Contacts group when syncing Google contacts for account:" << accountId << "; upsync disabled.");
-
-        // we can now continue with contact sync.
+        SOCIALD_LOG_INFO("Cannot find My Contacts group when syncing Google contacts for account:" << accountId);
         m_sqliteSync[accountId]->remoteCollectionsDetermined(QList<QContactCollection>());
     }
 
@@ -514,9 +510,40 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
         c.setCollectionId(sqliteSync->m_collection.id());
 
         const QString guid = c.detail<QContactGuid>().guid();
-        m_unsupportedXmlElements[accountId].insert(guid, remoteAddModContact.second);
 
-        const QString newEtag = c.detail<QContactOriginMetadata>().id();
+        // get the saved etag
+        QContactExtendedDetail etagDetail;
+        for (const QContactExtendedDetail &detail : c.details<QContactExtendedDetail>()) {
+            if (etagDetail.name() == QLatin1String("etag")) {
+                etagDetail = detail;
+                break;
+            }
+        }
+        const QString newEtag = etagDetail.data().toString();
+        if (newEtag.isEmpty()) {
+            SOCIALD_LOG_ERROR("No etag found for contact:" << guid);
+        } else {
+            m_contactEtags[accountId].insert(guid, newEtag);
+        }
+
+        // save the unsupportedElements data
+        QContactExtendedDetail unsupportedElementsDetail;
+        for (const QContactExtendedDetail &detail : c.details<QContactExtendedDetail>()) {
+            if (unsupportedElementsDetail.name() == UnsupportedElementsKey) {
+                unsupportedElementsDetail = detail;
+                break;
+            }
+        }
+        if (unsupportedElementsDetail.name().isEmpty()) {
+            unsupportedElementsDetail.setName(UnsupportedElementsKey);
+        }
+        unsupportedElementsDetail.setData(remoteAddModContact.second);
+        if (!c.saveDetail(&unsupportedElementsDetail)) {
+            SOCIALD_LOG_ERROR("Unable to save unsupported elements data" << remoteAddModContact.second
+                              << "to contact" << c.detail<QContactGuid>().guid());
+        }
+
+        // put contact into added or modified list
         const QMap<QString, QString>::iterator contactIdIter = m_contactIds[accountId].find(guid);
         if (contactIdIter == m_contactIds[accountId].end()) {
             m_remoteAdds[accountId].append(c);
@@ -524,7 +551,6 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
             c.setId(QContactId::fromString(contactIdIter.value()));
             m_remoteMods[accountId].append(c);
         }
-        m_contactEtags[accountId].insert(guid, newEtag);
     }
 
     const QList<QContact> remoteDelContacts = atom->deletedEntryContacts();
@@ -624,7 +650,15 @@ bool GoogleTwoWayContactSyncAdaptor::batchRemoteChanges(int accountId,
 {
     for (int i = contacts->size() - 1; i >= 0; --i) {
         QContact contact = contacts->takeAt(i);
-        QStringList extraXmlElements = m_unsupportedXmlElements[accountId].value(contact.detail<QContactGuid>().guid());
+
+        QStringList extraXmlElements;
+        for (const QContactExtendedDetail &detail : contact.details<QContactExtendedDetail>()) {
+            if (detail.name() == UnsupportedElementsKey) {
+                extraXmlElements = detail.data().toStringList();
+                break;
+            }
+        }
+
         if (updateType == GoogleContactStream::Add) {
             // new contacts need to be inserted into the My Contacts group
             GoogleContactSqliteSyncAdaptor *sqliteSync = m_sqliteSync[accountId];
@@ -889,41 +923,65 @@ void GoogleTwoWayContactSyncAdaptor::imageDownloaded(const QString &url, const Q
 
 void GoogleTwoWayContactSyncAdaptor::purgeAccount(int pid)
 {
-    QContactCollectionId collectionId = findCollection(*m_contactManager, MyContactsCollectionName, pid).id();
-    if (collectionId.isNull()) {
-        SOCIALD_LOG_ERROR("Nothing to purge, no collection has been saved for account" << pid);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_contactManager);
+    QContactManager::Error error = QContactManager::NoError;
+
+    QList<QContactCollection> addedCollections;
+    QList<QContactCollection> modifiedCollections;
+    QList<QContactCollection> deletedCollections;
+    QList<QContactCollection> unmodifiedCollections;
+
+    if (!cme->fetchCollectionChanges(pid,
+                                     qAppName(),
+                                     &addedCollections,
+                                     &modifiedCollections,
+                                     &deletedCollections,
+                                     &unmodifiedCollections,
+                                     &error)) {
+        SOCIALD_LOG_ERROR("Cannot find collection for account" << pid << "error:" << error);
         return;
     }
 
-    // Delete local avatar image files.
-    QContactCollectionFilter collectionFilter;
-    collectionFilter.setCollectionId(collectionId);
-    QContactFetchHint fetchHint;
-    fetchHint.setOptimizationHints(QContactFetchHint::NoRelationships);
-    fetchHint.setDetailTypesHint(QList<QContactDetail::DetailType>()
-                                 << QContactDetail::TypeGuid
-                                 << QContactDetail::TypeAvatar);
-    const QList<QContact> savedContacts = m_contactManager->contacts(collectionFilter, QList<QContactSortOrder>(), fetchHint);
-    for (const QContact &contact : savedContacts) {
-        const QContactAvatar avatar = contact.detail<QContactAvatar>();
-        const QString imageUrl = avatar.imageUrl().toString();
-        if (!imageUrl.isEmpty()) {
-            if (!QFile::remove(imageUrl)) {
-                SOCIALD_LOG_ERROR("Failed to remove avatar:" << imageUrl);
+    const QList<QContactCollection> collections = addedCollections + modifiedCollections + deletedCollections + unmodifiedCollections;
+    if (collections.isEmpty()) {
+        SOCIALD_LOG_INFO("Nothing to purge, no collection has been saved for account" << pid);
+        return;
+    }
+
+    for (const QContactCollection &collection : collections) {
+        // Delete local avatar image files.
+        QContactCollectionFilter collectionFilter;
+        collectionFilter.setCollectionId(collection.id());
+        QContactFetchHint fetchHint;
+        fetchHint.setOptimizationHints(QContactFetchHint::NoRelationships);
+        fetchHint.setDetailTypesHint(QList<QContactDetail::DetailType>()
+                                     << QContactDetail::TypeGuid
+                                     << QContactDetail::TypeAvatar);
+        const QList<QContact> savedContacts = m_contactManager->contacts(collectionFilter, QList<QContactSortOrder>(), fetchHint);
+        for (const QContact &contact : savedContacts) {
+            const QContactAvatar avatar = contact.detail<QContactAvatar>();
+            const QString imageUrl = avatar.imageUrl().toString();
+            if (!imageUrl.isEmpty()) {
+                if (!QFile::remove(imageUrl)) {
+                    SOCIALD_LOG_ERROR("Failed to remove avatar:" << imageUrl);
+                }
             }
         }
     }
 
+    QList<QContactCollectionId> collectionIds;
+    for (const QContactCollection &collection : collections) {
+        collectionIds.append(collection.id());
+    }
+
     // Delete the collection and its contacts.
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_contactManager);
-    QContactManager::Error error = QContactManager::NoError;
     if (cme->storeChanges(nullptr,
                           nullptr,
-                          QList<QContactCollectionId>() << collectionId,
+                          collectionIds,
                           QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
                           true,
                           &error)) {
-        SOCIALD_LOG_INFO("purged account" << pid << "and successfully removed collection" << collectionId);
+        SOCIALD_LOG_INFO("purged account" << pid << "and successfully removed collections" << collectionIds);
     } else {
         SOCIALD_LOG_ERROR("Failed to remove My Contacts collection during purge of account" << pid
                           << "error:" << error);
@@ -1037,7 +1095,7 @@ void GoogleTwoWayContactSyncAdaptor::finalCleanup()
     }
 }
 
-void GoogleTwoWayContactSyncAdaptor::readSyncStateData(const QContactCollection &collection)
+void GoogleTwoWayContactSyncAdaptor::loadCollection(const QContactCollection &collection)
 {
     const int accountId = collection.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
 
@@ -1046,25 +1104,6 @@ void GoogleTwoWayContactSyncAdaptor::readSyncStateData(const QContactCollection 
     QContactFetchHint noRelationships;
     noRelationships.setOptimizationHints(QContactFetchHint::NoRelationships);
     QList<QContact> savedContacts = m_contactManager->contacts(collectionFilter, QList<QContactSortOrder>(), noRelationships);
-
-    // m_unsupportedElements
-    QVariant ueValue = collection.extendedMetaData(QStringLiteral("unsupportedElements"));
-    QByteArray ueValueBA = ueValue.toByteArray();
-    QJsonObject ueJsonObj = QJsonDocument::fromBinaryData(ueValueBA).object();
-    QStringList contactGuids = ueJsonObj.keys();
-    QMap<QString, QStringList> guidToUnsupportedElements;
-    foreach (const QString &guid, contactGuids) {
-        QVariantList unsupportedElementsVL = ueJsonObj.value(guid).toArray().toVariantList();
-        QStringList unsupportedElements;
-        foreach (const QVariant &v, unsupportedElementsVL) {
-            if (!v.toString().isEmpty()) {
-                unsupportedElements.append(v.toString());
-            }
-        }
-
-        guidToUnsupportedElements.insert(guid, unsupportedElements);
-    }
-    m_unsupportedXmlElements[accountId] = guidToUnsupportedElements;
 
     m_contactEtags[accountId].clear();
     m_contactIds[accountId].clear();
@@ -1078,7 +1117,14 @@ void GoogleTwoWayContactSyncAdaptor::readSyncStateData(const QContactCollection 
         }
 
         // m_contactEtags
-        const QString etag = contact.detail<QContactOriginMetadata>().id();
+        QContactExtendedDetail etagDetail;
+        for (const QContactExtendedDetail &detail : contact.details<QContactExtendedDetail>()) {
+            if (etagDetail.name() == QLatin1String("etag")) {
+                etagDetail = detail;
+                break;
+            }
+        }
+        const QString etag = etagDetail.data().toString();
         if (!etag.isEmpty()) {
             m_contactEtags[accountId][contactGuid] = etag;
         }
@@ -1094,21 +1140,4 @@ void GoogleTwoWayContactSyncAdaptor::readSyncStateData(const QContactCollection 
             m_avatarImageUrls[accountId][contactGuid] = avatar.imageUrl().toString();
         }
     }
-}
-
-void GoogleTwoWayContactSyncAdaptor::storeSyncStateData(QContactCollection *collection)
-{
-    const int accountId = collection->extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
-
-    collection->setExtendedMetaData(CollectionKeyLastSync, QDateTime::currentDateTimeUtc());
-
-    // m_unsupportedXmlElements
-    QJsonObject ueJsonObj;
-    for (QMap<QString, QStringList>::const_iterator it = m_unsupportedXmlElements[accountId].constBegin();
-            it != m_unsupportedXmlElements[accountId].constEnd(); ++it) {
-        ueJsonObj.insert(it.key(), QJsonValue(QJsonArray::fromStringList(it.value())));
-    }
-    QJsonDocument ueJsonDoc(ueJsonObj);
-    QVariant ueValue(ueJsonDoc.toBinaryData());
-    collection->setExtendedMetaData("unsupportedElements", ueValue);
 }

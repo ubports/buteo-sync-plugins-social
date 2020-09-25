@@ -40,7 +40,7 @@ public:
     KnownContactsSyncer(QString path, QObject *parent = nullptr);
     ~KnownContactsSyncer();
 
-    bool purgeData();
+    bool purgeData(int accountId);
 
     virtual bool determineRemoteCollections() override;
     virtual bool deleteRemoteCollection(const QContactCollection &collection) override;

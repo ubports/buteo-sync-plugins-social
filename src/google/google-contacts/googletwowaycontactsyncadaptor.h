@@ -27,6 +27,7 @@
 
 #include <twowaycontactsyncadaptor.h>
 
+#include <QContactExtendedDetail>
 #include <QContactManager>
 #include <QContact>
 #include <QDateTime>
@@ -111,8 +112,6 @@ public:
                             const QList<QContact> &locallyDeleted,
                             int accountId);
 
-    void storeSyncStateData(QContactCollection *collection);
-
     QContactManager *m_contactManager = nullptr;
 
 protected:
@@ -148,7 +147,7 @@ private:
     void downloadContactAvatarImage(int accountId, const QString &accessToken, const QUrl &imageUrl, const QString &filename);
     void imageDownloaded(const QString &url, const QString &path, const QVariantMap &metadata);
 
-    void readSyncStateData(const QContactCollection &collection);
+    void loadCollection(const QContactCollection &collection);
 
     void purgeAccount(int pid);
     void postFinishedHandler();
@@ -167,7 +166,6 @@ private:
     QMap<int, QList<QContact> > m_localMods;
     QMap<int, QList<QContact> > m_localDels;
 
-    QMap<int, QMap<QString, QStringList> > m_unsupportedXmlElements; // contact guid -> elements
     QMap<int, QMap<QString, QString> > m_contactEtags; // contact guid -> contact etag
     QMap<int, QMap<QString, QString> > m_contactIds; // contact guid -> contact id
     QMap<int, QMap<QString, QString> > m_contactAvatars; // contact guid -> remote avatar path

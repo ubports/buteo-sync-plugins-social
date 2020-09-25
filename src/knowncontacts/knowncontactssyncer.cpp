@@ -55,17 +55,6 @@ static void setCompanyInfo(QContact *contact, const QSettings &file);
 
 namespace {
 
-QContactCollection findCollection(const QContactManager &contactManager, const QString &name)
-{
-    const QList<QContactCollection> collections = contactManager.collections();
-    for (const QContactCollection &collection : collections) {
-        if (collection.metaData(QContactCollection::KeyName).toString() == name) {
-            return collection;
-        }
-    }
-    return QContactCollection();
-}
-
 QContactCollection collectionForAccount(int accountId)
 {
     QContactCollection collection;
@@ -105,14 +94,18 @@ KnownContactsSyncer::~KnownContactsSyncer()
 
 bool KnownContactsSyncer::determineRemoteCollections()
 {
+    FUNCTION_CALL_TRACE;
+
     m_collections.clear();
 
-    const QList<QContactCollection> galCollections = contactManager().collections();
-    for (const QContactCollection &collection : galCollections) {
-        if (collection.metaData(QContactCollection::KeyName).toString() == GalCollectionName) {
+    const QList<QContactCollection> allCollections = contactManager().collections();
+    for (const QContactCollection &collection : allCollections) {
+        if (collection.metaData(QContactCollection::KeyName).toString() == GalCollectionName
+                && collection.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME).toString() == qAppName()) {
             m_collections.append(collection);
         }
     }
+    LOG_INFO("Found" << m_collections.count() << "existing collections");
 
     QDir syncDir(m_syncFolder);
     const QStringList fileNames = syncDir.entryList(QStringList() << "*-contacts-*.ini", QDir::Files);
@@ -122,19 +115,21 @@ bool KnownContactsSyncer::determineRemoteCollections()
             qWarning() << "No account id in .ini file name:" << fileName;
             continue;
         }
-        QContactCollection collection;
-        for (const QContactCollection &c : galCollections) {
+        QContactCollection accountCollection;
+        for (const QContactCollection &c : m_collections) {
             if (c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt() == accountId) {
-                collection = c;
+                accountCollection = c;
                 break;
             }
         }
-        if (collection.id().isNull()) {
-            collection = collectionForAccount(accountId);
-            m_collections.append(collection);
+        if (accountCollection.id().isNull()) {
+            accountCollection = collectionForAccount(accountId);
+            m_collections.append(accountCollection);
         }
-        m_updatedCollectionFileNames[collection.id()].append(fileName);
+        m_updatedCollectionFileNames[accountCollection.id()].append(fileName);
     }
+
+    LOG_INFO("Synced ini files" << fileNames << "now total collection count is:" << m_collections.count());
 
     remoteCollectionsDetermined(m_collections);
     return true;
@@ -358,27 +353,54 @@ void KnownContactsSyncer::syncFinishedWithError()
     emit syncFailed();
 }
 
-bool KnownContactsSyncer::purgeData()
+bool KnownContactsSyncer::purgeData(int accountId)
 {
-    const QContactCollectionId collectionId = findCollection(contactManager(), GalCollectionName).id();
-    if (collectionId.isNull()) {
-        LOG_INFO("Nothing to purge, no collection has been saved");
-        return true;
+    if (accountId <= 0) {
+        LOG_WARNING("Cannot purge data, invalid account id!");
+        return false;
     }
 
     QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(contactManager());
     QContactManager::Error error = QContactManager::NoError;
 
+    QList<QContactCollection> addedCollections;
+    QList<QContactCollection> modifiedCollections;
+    QList<QContactCollection> deletedCollections;
+    QList<QContactCollection> unmodifiedCollections;
+
+    if (!cme->fetchCollectionChanges(accountId,
+                                     qAppName(),
+                                     &addedCollections,
+                                     &modifiedCollections,
+                                     &deletedCollections,
+                                     &unmodifiedCollections,
+                                     &error)) {
+        LOG_WARNING("Cannot find collections for account" << accountId
+                    << "app" << qAppName() << "error:" << error);
+        return false;
+    }
+
+    const QList<QContactCollection> collections = addedCollections + modifiedCollections + deletedCollections + unmodifiedCollections;
+    if (collections.isEmpty()) {
+        LOG_INFO("Nothing to purge, no collection has been saved for account" << accountId);
+        return false;
+    }
+
+    QList<QContactCollectionId> collectionIds;
+    for (const QContactCollection &collection : collections) {
+        collectionIds.append(collection.id());
+    }
+
     if (cme->storeChanges(nullptr,
                           nullptr,
-                          QList<QContactCollectionId>() << collectionId,
+                          collectionIds,
                           QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
                           true,
                           &error)) {
-        LOG_INFO("Successfully removed contact collection" << collectionId);
+        LOG_INFO("Successfully removed contact collections" << collectionIds);
         return true;
     }
 
-    LOG_WARNING("Failed to remove contact collection:" << collectionId << "error:" << error);
+    LOG_WARNING("Failed to remove contact collections:" << collectionIds << "error:" << error);
     return false;
 }

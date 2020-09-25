@@ -142,7 +142,7 @@ bool KnownContactsPlugin::cleanUp()
     bool success;
 
     init();  // Ensure that syncer exists
-    success = m_syncer->purgeData();
+    success = m_syncer->purgeData(profile().key(Buteo::KEY_ACCOUNT_ID).toInt());
     uninit();  // Destroy syncer
 
     return success;

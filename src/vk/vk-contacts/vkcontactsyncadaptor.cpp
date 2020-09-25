@@ -69,6 +69,32 @@ QContactCollection findCollection(const QContactManager &contactManager, const Q
     return QContactCollection();
 }
 
+QList<QContactCollection> findAllCollections(QContactManager &contactManager, int accountId)
+{
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(contactManager);
+    QContactManager::Error error = QContactManager::NoError;
+
+    QList<QContactCollection> addedCollections;
+    QList<QContactCollection> modifiedCollections;
+    QList<QContactCollection> deletedCollections;
+    QList<QContactCollection> unmodifiedCollections;
+
+    if (!cme->fetchCollectionChanges(accountId,
+                                     qAppName(),
+                                     &addedCollections,
+                                     &modifiedCollections,
+                                     &deletedCollections,
+                                     &unmodifiedCollections,
+                                     &error)) {
+        LOG_WARNING("Cannot find collections for account" << accountId
+                            << "app" << qAppName() << "error:" << error);
+        return QList<QContactCollection>();
+    }
+
+    return addedCollections + modifiedCollections + deletedCollections + unmodifiedCollections;
+}
+
+
 QContact findContact(const QList<QContact> &contacts, const QString &guid)
 {
     for (const QContact &contact : contacts) {
@@ -220,41 +246,48 @@ void VKContactSyncAdaptor::sync(const QString &dataTypeString, int accountId)
 
 void VKContactSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode)
 {
-    QContactCollectionId friendCollectionId = findCollection(*m_contactManager, FriendCollectionName, oldId).id();
-    if (friendCollectionId.isNull()) {
+    const QList<QContactCollection> collections = findAllCollections(*m_contactManager, oldId);
+    if (collections.isEmpty()) {
         SOCIALD_LOG_ERROR("Nothing to purge, no collection has been saved for account" << oldId);
         return;
     }
 
-    // Delete local avatar image files.
-    QContactCollectionFilter collectionFilter;
-    collectionFilter.setCollectionId(friendCollectionId);
-    QContactFetchHint fetchHint;
-    fetchHint.setOptimizationHints(QContactFetchHint::NoRelationships);
-    fetchHint.setDetailTypesHint(QList<QContactDetail::DetailType>()
-                                 << QContactDetail::TypeGuid
-                                 << QContactDetail::TypeAvatar);
-    const QList<QContact> savedContacts = m_contactManager->contacts(collectionFilter, QList<QContactSortOrder>(), fetchHint);
-    for (const QContact &contact : savedContacts) {
-        const QContactAvatar avatar = contact.detail<QContactAvatar>();
-        const QString imageUrl = avatar.imageUrl().toString();
-        if (!imageUrl.isEmpty()) {
-            if (!QFile::remove(imageUrl)) {
-                SOCIALD_LOG_ERROR("Failed to remove avatar:" << imageUrl);
+    for (const QContactCollection &collection : collections) {
+        // Delete local avatar image files.
+        QContactCollectionFilter collectionFilter;
+        collectionFilter.setCollectionId(collection.id());
+        QContactFetchHint fetchHint;
+        fetchHint.setOptimizationHints(QContactFetchHint::NoRelationships);
+        fetchHint.setDetailTypesHint(QList<QContactDetail::DetailType>()
+                                     << QContactDetail::TypeGuid
+                                     << QContactDetail::TypeAvatar);
+        const QList<QContact> savedContacts = m_contactManager->contacts(collectionFilter, QList<QContactSortOrder>(), fetchHint);
+        for (const QContact &contact : savedContacts) {
+            const QContactAvatar avatar = contact.detail<QContactAvatar>();
+            const QString imageUrl = avatar.imageUrl().toString();
+            if (!imageUrl.isEmpty()) {
+                if (!QFile::remove(imageUrl)) {
+                    SOCIALD_LOG_ERROR("Failed to remove avatar:" << imageUrl);
+                }
             }
         }
     }
 
-    // Delete the collection and its contacts.
+    QList<QContactCollectionId> collectionIds;
+    for (const QContactCollection &collection : collections) {
+        collectionIds.append(collection.id());
+    }
+
+    // Delete the collections and their contacts.
     QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_contactManager);
     QContactManager::Error error = QContactManager::NoError;
     if (cme->storeChanges(nullptr,
                           nullptr,
-                          QList<QContactCollectionId>() << friendCollectionId,
+                          collectionIds,
                           QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
                           true,
                           &error)) {
-        SOCIALD_LOG_INFO("purged account" << oldId << "and successfully removed collection" << friendCollectionId);
+        SOCIALD_LOG_INFO("purged account" << oldId << "and successfully removed collections");
     } else {
         SOCIALD_LOG_ERROR("Failed to remove collection during purge of account" << oldId
                           << "error:" << error);
@@ -695,7 +728,7 @@ void VKContactSyncAdaptor::finalCleanup()
     }
 
     // find all account ids from which contacts have been synced
-    const QList<QContactCollection> collections = m_contactManager->collections();
+    const QList<QContactCollection> collections = findAllCollections(*m_contactManager, 0);
     for (const QContactCollection &collection : collections) {
         if (collection.metaData(QContactCollection::KeyName).toString() == FriendCollectionName) {
             const int purgeId = collection.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
