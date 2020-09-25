@@ -1,6 +1,6 @@
 Name:       sociald
 Summary:    Syncs device data from social services
-Version:    0.3.0
+Version:    0.3.1
 Release:    1
 License:    LGPLv2
 URL:        https://git.sailfishos.org/mer-core/buteo-sync-plugins-social
