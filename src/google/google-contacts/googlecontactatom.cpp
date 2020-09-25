@@ -189,12 +189,12 @@ QList<QContact> GoogleContactAtom::deletedEntryContacts() const
     return mDeletedContactList;
 }
 
-void GoogleContactAtom::addEntrySystemGroup(const QString &systemGroupId, const QString &systemGroupAtomId)
+void GoogleContactAtom::addEntrySystemGroup(const QString &systemGroupId, const QString &systemGroupAtomId, const QString &systemGroupTitle)
 {
-    mSystemGroupAtomIds.insert(systemGroupId, systemGroupAtomId);
+    mSystemGroupAtomIds.insert(systemGroupId, qMakePair(systemGroupAtomId, systemGroupTitle));
 }
 
-QMap<QString, QString> GoogleContactAtom::entrySystemGroups() const
+QMap<QString, QPair<QString, QString> > GoogleContactAtom::entrySystemGroups() const
 {
     return mSystemGroupAtomIds;
 }

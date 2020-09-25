@@ -417,19 +417,23 @@ void GoogleTwoWayContactSyncAdaptor::groupsFinishedHandler()
         return;
     }
 
-    SOCIALD_LOG_TRACE("received information about" << atom->entrySystemGroups().size() << "groups for account" << accountId);
+    const QMap<QString, QPair<QString, QString> > entrySystemGroups = atom->entrySystemGroups();
+    SOCIALD_LOG_TRACE("received information about" << entrySystemGroups.size() << "groups for account" << accountId);
 
-    if (atom->entrySystemGroups().contains(QStringLiteral("Contacts"))) {
+    auto it = entrySystemGroups.find(QStringLiteral("Contacts"));
+    if (it != entrySystemGroups.constEnd()) {
+        // we have found the atom id of the group we need to upload new contacts to.
+        const QString myContactsGroupAtomId = it.value().first;
+        const QString myContactsGroupAtomTitle = it.value().second;
+
         QContactCollection collection;
-        collection.setMetaData(QContactCollection::KeyName, MyContactsCollectionName);
+        collection.setMetaData(QContactCollection::KeyName, myContactsGroupAtomTitle);
         collection.setMetaData(QContactCollection::KeyDescription, QStringLiteral("Google - Contacts"));
         collection.setMetaData(QContactCollection::KeyColor, QStringLiteral("tomato"));
         collection.setMetaData(QContactCollection::KeySecondaryColor, QStringLiteral("royalblue"));
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, QCoreApplication::applicationName());
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, accountId);
 
-        // we have found the atom id of the group we need to upload new contacts to.
-        QString myContactsGroupAtomId = atom->entrySystemGroups().value(QStringLiteral("Contacts"));
         if (myContactsGroupAtomId.isEmpty()) {
             // We don't consider this a fatal error,
             // instead, we just refuse to upsync new contacts.

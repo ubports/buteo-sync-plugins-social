@@ -44,7 +44,7 @@
   Exchange accounts.
 */
 
-const auto GalCollectionName = QLatin1String("EAS GAL contacts");
+const auto GalCollectionName = QLatin1String("GAL");
 const auto CollectionKeyLastSync = QLatin1String("last-sync-time");
 
 static void setGuid(QContact *contact, const QString &id);

@@ -81,8 +81,8 @@ public:
     void addDeletedEntryContact(const QContact &contact);
     QList<QContact> deletedEntryContacts() const;
 
-    void addEntrySystemGroup(const QString &systemGroupId, const QString &systemGroupAtomId);
-    QMap<QString, QString> entrySystemGroups() const;
+    void addEntrySystemGroup(const QString &systemGroupId, const QString &systemGroupAtomId, const QString &systemGroupTitle);
+    QMap<QString, QPair<QString, QString> > entrySystemGroups() const;
 
     void setNextEntriesUrl(const QString &nextUrl);
     QString nextEntriesUrl() const;
@@ -129,7 +129,7 @@ private:
     QList<QContact> mDeletedContactList;
     QList<QPair<QContact, QStringList> > mContactList;
 
-    QMap<QString, QString> mSystemGroupAtomIds;
+    QMap<QString, QPair<QString, QString> > mSystemGroupAtomIds;
 
     QString mNextEntriesUrl;
 };

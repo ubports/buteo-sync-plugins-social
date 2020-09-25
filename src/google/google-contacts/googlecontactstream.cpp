@@ -299,6 +299,8 @@ void GoogleContactStream::handleAtomEntry()
     bool isInGroup = false;
     bool isDeleted = false;
 
+    QString title;
+
     // or it will be a series of batch operation success/fail info
     // if this xml is the response to a batch update/delete request.
     bool isBatchOperationResponse = false;
@@ -365,6 +367,8 @@ void GoogleContactStream::handleAtomEntry()
                 // either a contact id or a group id.
                 QContactDetail guidDetail = handleEntryId(&systemGroupAtomId);
                 entryContact.saveDetail(&guidDetail);
+            } else if (mXmlReader->name().toString() == QStringLiteral("title")) {
+                title = mXmlReader->readElementText();
             } else {
                 // This is some XML element which we don't handle.
                 // We should store it, so that we can send it back when we upload changes.
@@ -379,7 +383,7 @@ void GoogleContactStream::handleAtomEntry()
 
     if (!systemGroupId.isEmpty()) {
         // this entry was a group
-        mAtom->addEntrySystemGroup(systemGroupId, systemGroupAtomId);
+        mAtom->addEntrySystemGroup(systemGroupId, systemGroupAtomId, title);
     } else {
         // this entry was a contact.
         // the etag is the "version identifier".

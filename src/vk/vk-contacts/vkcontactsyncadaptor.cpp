@@ -49,7 +49,7 @@ static const char *IMAGE_DOWNLOADER_IDENTIFIER_KEY = "identifier";
 
 namespace {
 
-const QString FriendCollectionName = QStringLiteral("vk-friends");
+const QString FriendCollectionName = QStringLiteral("VK");
 
 bool saveNonexportableDetail(QContact &c, QContactDetail &d)
 {
