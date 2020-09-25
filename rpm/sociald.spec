@@ -1,6 +1,6 @@
 Name:       sociald
 Summary:    Syncs device data from social services
-Version:    0.2.25
+Version:    0.3.0
 Release:    1
 License:    LGPLv2
 URL:        https://git.sailfishos.org/mer-core/buteo-sync-plugins-social
@@ -15,7 +15,7 @@ BuildRequires:  pkgconfig(libsignon-qt5)
 BuildRequires:  pkgconfig(accounts-qt5) >= 1.13
 BuildRequires:  pkgconfig(socialcache) >= 0.0.48
 BuildRequires:  pkgconfig(libsailfishkeyprovider)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
+BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.3.0
 BuildRequires:  qt5-qttools-linguist
 BuildRequires:  ssu-devel
 Requires: buteo-syncfw-qt5-msyncd
@@ -23,6 +23,7 @@ Requires: systemd
 Requires(pre):  sailfish-setup
 Requires(post): systemd
 Obsoletes: sociald-facebook-notifications
+Obsoletes: sociald-facebook-contacts
 
 %description
 A Buteo plugin which provides data synchronization with various social services.
@@ -63,36 +64,6 @@ for user in $USERS; do
 done
 
 %post facebook-calendars
-systemctl-user try-restart msyncd.service || :
-
-
-%package facebook-contacts
-Summary:    Provides contact synchronisation with Facebook
-BuildRequires:  pkgconfig(Qt5Gui)
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
-Requires: %{name} = %{version}-%{release}
-
-%description facebook-contacts
-%{summary}
-
-%files facebook-contacts
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/facebook-contacts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libfacebook-contacts-client.so
-%config %{_sysconfdir}/buteo/profiles/client/facebook-contacts.xml
-%config %{_sysconfdir}/buteo/profiles/sync/facebook.Contacts.xml
-
-%pre facebook-contacts
-USERS=$(getent group users | cut -d ":" -f 4 | tr "," "\n")
-for user in $USERS; do
-    USERHOME=$(getent passwd ${user} | cut -d ":" -f 6)
-    rm -f ${USERHOME}/.cache/msyncd/sync/client/facebook-contacts.xml || :
-    rm -f ${USERHOME}/.cache/msyncd/sync/facebook.Contacts.xml || :
-done
-
-%post facebook-contacts
 systemctl-user try-restart msyncd.service || :
 
 
@@ -341,7 +312,6 @@ Requires: %{name} = %{version}-%{release}
 %{summary}.
 
 %files vk-posts
-#%{_datadir}/translations/lipstick-jolla-home-vk_eng_en.qm
 #out-of-process-plugin form:
 %{_libdir}/buteo-plugins-qt5/oopp/vk-posts-client
 #in-process-plugin form:

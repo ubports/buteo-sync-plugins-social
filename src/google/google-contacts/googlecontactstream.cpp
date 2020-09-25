@@ -29,6 +29,7 @@
 #include "trace.h"
 
 #include <QDateTime>
+#include <QContactExtendedDetail>
 
 static void dumpXml(const QByteArray &xml)
 {
@@ -344,13 +345,7 @@ void GoogleContactStream::handleAtomEntry()
                 // Batch link etc.
 
                 // If it's an avatar, we grab it as a QContactAvatar detail
-                QContactAvatar avatar;
-                Q_FOREACH (const QContactAvatar &av, entryContact.details<QContactAvatar>()) {
-                    if (av.value(QContactAvatar__FieldAvatarMetadata).toString() == QStringLiteral("picture")) {
-                        avatar = av;
-                        break;
-                    }
-                }
+                QContactAvatar avatar = entryContact.detail<QContactAvatar>();
                 bool isAvatar = false;
                 QString unsupportedElement = handleEntryLink(&avatar, &isAvatar);
                 if (isAvatar) {
@@ -387,11 +382,20 @@ void GoogleContactStream::handleAtomEntry()
         mAtom->addEntrySystemGroup(systemGroupId, systemGroupAtomId);
     } else {
         // this entry was a contact.
-        // the etag is the "version identifier".  Save it into the QCOM detail.
+        // the etag is the "version identifier".
         if (!contactEtag.isEmpty()) {
-            QContactOriginMetadata omd = entryContact.detail<QContactOriginMetadata>();
-            omd.setId(contactEtag);
-            entryContact.saveDetail(&omd);
+            QContactExtendedDetail etagDetail;
+            for (const QContactExtendedDetail &detail : entryContact.details<QContactExtendedDetail>()) {
+                if (etagDetail.name() == QLatin1String("etag")) {
+                    etagDetail = detail;
+                    break;
+                }
+            }
+            if (etagDetail.name().isEmpty()) {
+                etagDetail.setName(QStringLiteral("etag"));
+            }
+            etagDetail.setData(contactEtag);
+            entryContact.saveDetail(&etagDetail);
         }
 
         if (isInGroup) {
@@ -418,11 +422,12 @@ QString GoogleContactStream::handleEntryLink(QContactAvatar *avatar, bool *isAva
 {
     Q_ASSERT(mXmlReader->isStartElement() && mXmlReader->name() == "link");
 
-    if (mXmlReader->attributes().hasAttribute("gd:etag")
+    const QString etag = mXmlReader->attributes().value("gd:etag").toString();
+    if (!etag.isEmpty()
             && (mXmlReader->attributes().value("rel") == "http://schemas.google.com/contacts/2008/rel#photo")) {
         // this is an avatar photo for the contact entry
         avatar->setImageUrl(mXmlReader->attributes().value("href").toString());
-        avatar->setValue(QContactAvatar__FieldAvatarMetadata, QVariant::fromValue<QString>(QStringLiteral("picture")));
+        avatar->setValue(QContactAvatar::FieldMetaData, etag);
         *isAvatar = true;
     }
 
@@ -944,8 +949,13 @@ void GoogleContactStream::encodeUpdatedTimestamp(const QContact &qContact)
 
 void GoogleContactStream::encodeEtag(const QContact &qContact, bool needed)
 {
-    QContactOriginMetadata etagDetail = qContact.detail<QContactOriginMetadata>();
-    QString etag = etagDetail.id();
+    QString etag;
+    for (const QContactExtendedDetail &detail : qContact.details<QContactExtendedDetail>()) {
+        if (detail.name() == QLatin1String("etag")) {
+            etag = detail.data().toString();
+            break;
+        }
+    }
     if (!etag.isEmpty()) {
         mXmlWriter->writeAttribute("gd:etag", etag);
     } else if (needed) {
