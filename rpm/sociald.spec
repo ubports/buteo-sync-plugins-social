@@ -17,7 +17,6 @@ BuildRequires:  pkgconfig(socialcache) >= 0.0.48
 BuildRequires:  pkgconfig(libsailfishkeyprovider)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.3.0
 BuildRequires:  qt5-qttools-linguist
-BuildRequires:  ssu-devel
 Requires: buteo-syncfw-qt5-msyncd
 Requires: systemd
 Requires(pre):  sailfish-setup

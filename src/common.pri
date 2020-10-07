@@ -6,7 +6,6 @@ PKGCONFIG += \
     accounts-qt5 \
     buteosyncfw5 \
     socialcache
-LIBS += -lssu
 
 QT += \
     network \
