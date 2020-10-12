@@ -313,7 +313,7 @@ void GoogleContactStream::handleAtomEntry()
                 QContactDetail convertedDetail = (*this.*handler)();
                 if (convertedDetail != QContactDetail()) {
                     convertedDetail.setValue(QContactDetail__FieldModifiable, true);
-                    entryContact.saveDetail(&convertedDetail);
+                    entryContact.saveDetail(&convertedDetail, QContact::IgnoreAccessConstraints);
                 }
             } else if (mXmlReader->qualifiedName().toString() == QStringLiteral("gContact:groupMembershipInfo")) {
                 isInGroup = true;
@@ -351,7 +351,7 @@ void GoogleContactStream::handleAtomEntry()
                 bool isAvatar = false;
                 QString unsupportedElement = handleEntryLink(&avatar, &isAvatar);
                 if (isAvatar) {
-                    entryContact.saveDetail(&avatar);
+                    entryContact.saveDetail(&avatar, QContact::IgnoreAccessConstraints);
                 }
 
                 // Whether it's an avatar or not, we also store the element text.
@@ -366,7 +366,7 @@ void GoogleContactStream::handleAtomEntry()
             } else if (mXmlReader->qualifiedName().toString() == QStringLiteral("id")) {
                 // either a contact id or a group id.
                 QContactDetail guidDetail = handleEntryId(&systemGroupAtomId);
-                entryContact.saveDetail(&guidDetail);
+                entryContact.saveDetail(&guidDetail, QContact::IgnoreAccessConstraints);
             } else if (mXmlReader->name().toString() == QStringLiteral("title")) {
                 title = mXmlReader->readElementText();
             } else {
@@ -399,7 +399,7 @@ void GoogleContactStream::handleAtomEntry()
                 etagDetail.setName(QStringLiteral("etag"));
             }
             etagDetail.setData(contactEtag);
-            entryContact.saveDetail(&etagDetail);
+            entryContact.saveDetail(&etagDetail, QContact::IgnoreAccessConstraints);
         }
 
         if (isInGroup) {
