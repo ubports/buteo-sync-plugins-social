@@ -68,15 +68,16 @@ static const char *IMAGE_DOWNLOADER_IDENTIFIER_KEY = "identifier";
 namespace {
 
 const QString MyContactsCollectionName = QStringLiteral("Contacts");
+const QString CollectionKeyMyContacts = QStringLiteral("MyContacts");
 const QString CollectionKeyLastSync = QStringLiteral("last-sync-time");
 const QString CollectionKeyAtomId = QStringLiteral("atom-id");
 const QString UnsupportedElementsKey = QStringLiteral("unsupportedElements");
 
-QContactCollection findCollection(const QContactManager &contactManager, const QString &name, int accountId)
+QContactCollection findCollection(const QContactManager &contactManager, int accountId)
 {
     const QList<QContactCollection> collections = contactManager.collections();
     for (const QContactCollection &collection : collections) {
-        if (collection.metaData(QContactCollection::KeyName).toString() == name
+        if (collection.extendedMetaData(CollectionKeyMyContacts).toBool()
                 && collection.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt() == accountId) {
             return collection;
         }
@@ -108,7 +109,7 @@ GoogleContactSqliteSyncAdaptor::GoogleContactSqliteSyncAdaptor(int accountId, Go
     , q(parent)
     , m_accountId(accountId)
 {
-    m_collection = findCollection(contactManager(), MyContactsCollectionName, m_accountId);
+    m_collection = findCollection(contactManager(), m_accountId);
     if (m_collection.id().isNull()) {
         SOCIALD_LOG_DEBUG("No MyContacts collection saved yet for account:" << m_accountId);
     } else {
@@ -211,7 +212,7 @@ void GoogleContactSqliteSyncAdaptor::syncFinishedSuccessfully()
     // If this is the first sync, TWCSA will have saved the collection and given it a valid id, so
     // update m_collection so that any post-sync operations (e.g. saving of queued avatar downloads)
     // will refer to a valid collection.
-    const QContactCollection savedCollection = findCollection(contactManager(), MyContactsCollectionName, m_accountId);
+    const QContactCollection savedCollection = findCollection(contactManager(), m_accountId);
     if (savedCollection.id().isNull()) {
         SOCIALD_LOG_DEBUG("Error: cannot find saved My Contacts collection!");
     } else {
@@ -311,7 +312,10 @@ void GoogleTwoWayContactSyncAdaptor::beginSync(int accountId, const QString &acc
         delete sqliteSync;
     }
     sqliteSync = new GoogleContactSqliteSyncAdaptor(accountId, this);
-    loadCollection(sqliteSync->m_collection);
+
+    if (!sqliteSync->m_collection.id().isNull()) {
+        loadCollection(sqliteSync->m_collection);
+    }
 
     if (!sqliteSync->startSync()) {
         sqliteSync->deleteLater();
@@ -433,6 +437,7 @@ void GoogleTwoWayContactSyncAdaptor::groupsFinishedHandler()
         collection.setMetaData(QContactCollection::KeySecondaryColor, QStringLiteral("royalblue"));
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, QCoreApplication::applicationName());
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, accountId);
+        collection.setExtendedMetaData(CollectionKeyMyContacts, true);
 
         if (myContactsGroupAtomId.isEmpty()) {
             // We don't consider this a fatal error,
@@ -518,7 +523,7 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
         // get the saved etag
         QContactExtendedDetail etagDetail;
         for (const QContactExtendedDetail &detail : c.details<QContactExtendedDetail>()) {
-            if (etagDetail.name() == QLatin1String("etag")) {
+            if (detail.name() == QStringLiteral("etag")) {
                 etagDetail = detail;
                 break;
             }
@@ -542,7 +547,7 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
             unsupportedElementsDetail.setName(UnsupportedElementsKey);
         }
         unsupportedElementsDetail.setData(remoteAddModContact.second);
-        if (!c.saveDetail(&unsupportedElementsDetail)) {
+        if (!c.saveDetail(&unsupportedElementsDetail, QContact::IgnoreAccessConstraints)) {
             SOCIALD_LOG_ERROR("Unable to save unsupported elements data" << remoteAddModContact.second
                               << "to contact" << c.detail<QContactGuid>().guid());
         }
@@ -560,10 +565,15 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
     const QList<QContact> remoteDelContacts = atom->deletedEntryContacts();
     for (QContact c : remoteDelContacts) {
         const QString guid = c.detail<QContactGuid>().guid();
-        c.setId(QContactId::fromString(m_contactIds[accountId].value(guid)));
-        c.setCollectionId(sqliteSync->m_collection.id());
-        m_contactAvatars[accountId].remove(guid); // just in case the avatar was outstanding.
-        m_remoteDels[accountId].append(c);
+        const QString idStr = m_contactIds[accountId].value(guid);
+        if (idStr.isEmpty()) {
+            SOCIALD_LOG_ERROR("Unable to find deleted contact with guid: " << guid);
+        } else {
+            c.setId(QContactId::fromString(idStr));
+            c.setCollectionId(sqliteSync->m_collection.id());
+            m_contactAvatars[accountId].remove(guid); // just in case the avatar was outstanding.
+            m_remoteDels[accountId].append(c);
+        }
     }
 
     if (!atom->nextEntriesUrl().isEmpty()) {
@@ -1026,7 +1036,7 @@ void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
                 QContactAvatar a = c.detail<QContactAvatar>();
                 a.setValue(QContactAvatar::FieldMetaData, m_avatarEtags[accountId].value(guid));
                 a.setImageUrl(it.value());
-                if (c.saveDetail(&a)) {
+                if (c.saveDetail(&a, QContact::IgnoreAccessConstraints)) {
                     contactsToSave[c.detail<QContactGuid>().guid()] = c;
                 } else {
                     SOCIALD_LOG_ERROR("Unable to save avatar" << it.value()
