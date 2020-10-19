@@ -28,10 +28,14 @@
 #include "constants_p.h"
 #include "trace.h"
 
+#include <seasidecache.h>
+
 #include <QDateTime>
 #include <QContactExtendedDetail>
 
-static void dumpXml(const QByteArray &xml)
+namespace {
+
+void dumpXml(const QByteArray &xml)
 {
     // this algorithm doesn't handle a lot of stuff (escaped slashes/angle-brackets, slashes/angle-brackets in text, etc) but it works:
     // see < then read until > and that becomes "tag".  Print indent, print tag, print newline.  If tag didn't contain /> then indent += "    " else deindent.
@@ -96,7 +100,7 @@ static void dumpXml(const QByteArray &xml)
     }
 }
 
-static bool traceOutputEnabled()
+bool traceOutputEnabled()
 {
     const QByteArray loggingLevelByteArray = qgetenv("MSYNCD_LOGGING_LEVEL");
     const QString loggingLevelStr = QString::fromLocal8Bit(loggingLevelByteArray.constData());
@@ -106,6 +110,30 @@ static bool traceOutputEnabled()
     int level = loggingLevelStr.toInt(&ok);
     int dump = dumpXmlStr.toInt(&ok);
     return ok && level >= 8 && dump == 1;
+}
+
+bool saveExtendedDetail(QContact *contact, const QString &detailName, const QVariant &detailData)
+{
+    QContactExtendedDetail matchedDetail;
+    for (const QContactExtendedDetail &detail : contact->details<QContactExtendedDetail>()) {
+        if (detail.name() == detailName) {
+            matchedDetail = detail;
+            break;
+        }
+    }
+
+    if (matchedDetail.name().isEmpty()) {
+        matchedDetail.setName(detailName);
+    }
+    matchedDetail.setData(detailData);
+    return contact->saveDetail(&matchedDetail, QContact::IgnoreAccessConstraints);
+}
+
+bool saveContactEtag(QContact *contact, const QString &etag)
+{
+    return saveExtendedDetail(contact, QStringLiteral("etag"), etag);
+}
+
 }
 
 GoogleContactStream::GoogleContactStream(bool response, int accountId, const QString &accountEmail, QObject* parent)
@@ -388,18 +416,7 @@ void GoogleContactStream::handleAtomEntry()
         // this entry was a contact.
         // the etag is the "version identifier".
         if (!contactEtag.isEmpty()) {
-            QContactExtendedDetail etagDetail;
-            for (const QContactExtendedDetail &detail : entryContact.details<QContactExtendedDetail>()) {
-                if (etagDetail.name() == QLatin1String("etag")) {
-                    etagDetail = detail;
-                    break;
-                }
-            }
-            if (etagDetail.name().isEmpty()) {
-                etagDetail.setName(QStringLiteral("etag"));
-            }
-            etagDetail.setData(contactEtag);
-            entryContact.saveDetail(&etagDetail, QContact::IgnoreAccessConstraints);
+            saveContactEtag(&entryContact, contactEtag);
         }
 
         if (isInGroup) {
@@ -417,6 +434,8 @@ void GoogleContactStream::handleAtomEntry()
     if (isBatchOperationResponse) {
         if (!entryContact.detail<QContactGuid>().guid().isEmpty()) {
             response.contactGuid = entryContact.detail<QContactGuid>().guid();
+            response.etag = contactEtag;
+            response.unsupportedElements = unsupportedElements;
         }
         mAtom->addBatchOperationResponse(response.operationId, response);
     }

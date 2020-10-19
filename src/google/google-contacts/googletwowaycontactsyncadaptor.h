@@ -72,6 +72,7 @@ public:
     virtual void syncFinishedWithError() override;
 
     QContactCollection m_collection;
+    QDateTime m_syncDateTime;
 
 private:
     GoogleTwoWayContactSyncAdaptor *q;
@@ -153,6 +154,12 @@ private:
     void postFinishedHandler();
     void postErrorHandler();
 
+    struct ContactUpsyncResponse {
+        QStringList unsupportedElements;
+        QString guid;
+        QString etag;
+    };
+
     GoogleContactImageDownloader *m_workerObject = nullptr;
 
     QMap<int, GoogleContactSqliteSyncAdaptor *> m_sqliteSync;
@@ -171,10 +178,11 @@ private:
     QMap<int, QMap<QString, QString> > m_contactAvatars; // contact guid -> remote avatar path
     QMap<int, QMap<QString, QString> > m_avatarEtags;
     QMap<int, QMap<QString, QString> > m_avatarImageUrls;
+    QMap<int, QMap<QString, ContactUpsyncResponse> > m_contactUpsyncResponses; // contact id -> response info
+    QMap<int, QMap<GoogleContactStream::UpdateType, int> > m_batchUpdateIndexes;
 
     QMap<int, int> m_apiRequestsRemaining;
     QMap<int, QMap<QString, QString> > m_queuedAvatarsForDownload; // contact guid -> remote avatar path
-    QMap<int, QMap<QString, QString> > m_downloadedContactAvatars; // contact guid -> local file path
 
     bool m_allowFinalCleanup = false;
 };

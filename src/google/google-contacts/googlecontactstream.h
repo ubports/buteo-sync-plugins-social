@@ -68,6 +68,7 @@ public:
         Modify,
         Remove
     };
+    Q_ENUM(UpdateType)
 
 public:
     explicit GoogleContactStream(bool response, int accountId, const QString &accountEmail = QString(), QObject* parent = 0);
