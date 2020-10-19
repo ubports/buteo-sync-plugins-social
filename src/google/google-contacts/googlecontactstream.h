@@ -162,7 +162,6 @@ private:
     void encodeAnniversary(const QContactAnniversary &anniversary);
     void encodeOnlineAccount(const QContactOnlineAccount &onlineAccount);
     void encodeFamily(const QContactFamily &family);
-    void encodeDisplayLabel(const QContactDisplayLabel &displayLabel);
 
     void encodeUnknownElements(const QStringList &unknownElements);
 
