@@ -642,6 +642,8 @@ QContactDetail GoogleContactStream::handleEntryName()
                 name.setPrefix(mXmlReader->readElementText());
             } else if (mXmlReader->qualifiedName() == "gd:nameSuffix") {
                 name.setSuffix(mXmlReader->readElementText());
+            } else if (mXmlReader->qualifiedName() == "gd:fullName") {
+                name.setCustomLabel(mXmlReader->readElementText());
             }
         }
         mXmlReader->readNextStartElement();
@@ -972,16 +974,32 @@ void GoogleContactStream::encodeEtag(const QContact &qContact, bool needed)
 void GoogleContactStream::encodeName(const QContactName &name)
 {
     mXmlWriter->writeStartElement("gd:name");
-    if (!name.firstName().isEmpty())
-        mXmlWriter->writeTextElement("gd:givenName", name.firstName());
+
+    const QString firstName = name.firstName();
+    const QString lastName = name.lastName();
+
+    if (!firstName.isEmpty())
+        mXmlWriter->writeTextElement("gd:givenName", firstName);
     if (!name.middleName().isEmpty())
         mXmlWriter->writeTextElement("gd:additionalName", name.middleName());
-    if (!name.lastName().isEmpty())
-        mXmlWriter->writeTextElement("gd:familyName", name.lastName());
+    if (!lastName.isEmpty())
+        mXmlWriter->writeTextElement("gd:familyName", lastName);
     if (!name.prefix().isEmpty())
         mXmlWriter->writeTextElement("gd:namePrefix", name.prefix());
     if (!name.suffix().isEmpty())
         mXmlWriter->writeTextElement("gd:nameSuffix", name.suffix());
+
+    const QString fullName = (QStringList()
+            << name.prefix()
+            << SeasideCache::primaryName(firstName, lastName)
+            << name.middleName()
+            << SeasideCache::secondaryName(firstName, lastName)
+            << name.suffix()).join(' ');
+    if (!fullName.isEmpty())
+        mXmlWriter->writeTextElement("gd:fullName", fullName);
+    else if (!name.customLabel().isEmpty())
+        mXmlWriter->writeTextElement("gd:fullName", name.customLabel());
+
     mXmlWriter->writeEndElement();
 }
 
