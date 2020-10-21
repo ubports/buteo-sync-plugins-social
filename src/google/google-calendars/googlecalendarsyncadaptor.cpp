@@ -21,6 +21,7 @@
 
 #include "googlecalendarsyncadaptor.h"
 #include "googlecalendarincidencecomparator.h"
+#include "googlecalendarsyncerror.h"
 #include "trace.h"
 
 #include <QtCore/QUrlQuery>
@@ -2203,6 +2204,15 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
         // TODO: is there some way to detect whether I am the organizer/owner of the event?
         if (reply->error() == QNetworkReply::ContentOperationNotPermittedError) {
             SOCIALD_LOG_TRACE("Ignoring 403 due to shared calendar resource");
+        } else if (httpCode == 410) {
+            const GoogleCalendarSyncError error(replyData);
+            if (error.firstReason() == QStringLiteral("deleted")) {
+                // HTTP 410 GONE "deleted"
+                // The event was already deleted on the server, so continue as normal
+            } else {
+                errorDumpStr(QString::fromUtf8(replyData));
+                m_syncSucceeded[accountId] = false;
+            }
         } else {
             m_syncSucceeded[accountId] = false;
         }
