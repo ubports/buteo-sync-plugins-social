@@ -54,7 +54,7 @@ const QString FriendCollectionName = QStringLiteral("VK");
 bool saveNonexportableDetail(QContact &c, QContactDetail &d)
 {
     d.setValue(QContactDetail__FieldNonexportable, QVariant::fromValue<bool>(true));
-    return c.saveDetail(&d);
+    return c.saveDetail(&d, QContact::IgnoreAccessConstraints);
 }
 
 QContactCollection findCollection(const QContactManager &contactManager, const QString &name, int accountId)

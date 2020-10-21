@@ -28,10 +28,14 @@
 #include "constants_p.h"
 #include "trace.h"
 
+#include <seasidecache.h>
+
 #include <QDateTime>
 #include <QContactExtendedDetail>
 
-static void dumpXml(const QByteArray &xml)
+namespace {
+
+void dumpXml(const QByteArray &xml)
 {
     // this algorithm doesn't handle a lot of stuff (escaped slashes/angle-brackets, slashes/angle-brackets in text, etc) but it works:
     // see < then read until > and that becomes "tag".  Print indent, print tag, print newline.  If tag didn't contain /> then indent += "    " else deindent.
@@ -96,7 +100,7 @@ static void dumpXml(const QByteArray &xml)
     }
 }
 
-static bool traceOutputEnabled()
+bool traceOutputEnabled()
 {
     const QByteArray loggingLevelByteArray = qgetenv("MSYNCD_LOGGING_LEVEL");
     const QString loggingLevelStr = QString::fromLocal8Bit(loggingLevelByteArray.constData());
@@ -106,6 +110,30 @@ static bool traceOutputEnabled()
     int level = loggingLevelStr.toInt(&ok);
     int dump = dumpXmlStr.toInt(&ok);
     return ok && level >= 8 && dump == 1;
+}
+
+bool saveExtendedDetail(QContact *contact, const QString &detailName, const QVariant &detailData)
+{
+    QContactExtendedDetail matchedDetail;
+    for (const QContactExtendedDetail &detail : contact->details<QContactExtendedDetail>()) {
+        if (detail.name() == detailName) {
+            matchedDetail = detail;
+            break;
+        }
+    }
+
+    if (matchedDetail.name().isEmpty()) {
+        matchedDetail.setName(detailName);
+    }
+    matchedDetail.setData(detailData);
+    return contact->saveDetail(&matchedDetail, QContact::IgnoreAccessConstraints);
+}
+
+bool saveContactEtag(QContact *contact, const QString &etag)
+{
+    return saveExtendedDetail(contact, QStringLiteral("etag"), etag);
+}
+
 }
 
 GoogleContactStream::GoogleContactStream(bool response, int accountId, const QString &accountEmail, QObject* parent)
@@ -313,7 +341,7 @@ void GoogleContactStream::handleAtomEntry()
                 QContactDetail convertedDetail = (*this.*handler)();
                 if (convertedDetail != QContactDetail()) {
                     convertedDetail.setValue(QContactDetail__FieldModifiable, true);
-                    entryContact.saveDetail(&convertedDetail);
+                    entryContact.saveDetail(&convertedDetail, QContact::IgnoreAccessConstraints);
                 }
             } else if (mXmlReader->qualifiedName().toString() == QStringLiteral("gContact:groupMembershipInfo")) {
                 isInGroup = true;
@@ -351,7 +379,7 @@ void GoogleContactStream::handleAtomEntry()
                 bool isAvatar = false;
                 QString unsupportedElement = handleEntryLink(&avatar, &isAvatar);
                 if (isAvatar) {
-                    entryContact.saveDetail(&avatar);
+                    entryContact.saveDetail(&avatar, QContact::IgnoreAccessConstraints);
                 }
 
                 // Whether it's an avatar or not, we also store the element text.
@@ -366,7 +394,7 @@ void GoogleContactStream::handleAtomEntry()
             } else if (mXmlReader->qualifiedName().toString() == QStringLiteral("id")) {
                 // either a contact id or a group id.
                 QContactDetail guidDetail = handleEntryId(&systemGroupAtomId);
-                entryContact.saveDetail(&guidDetail);
+                entryContact.saveDetail(&guidDetail, QContact::IgnoreAccessConstraints);
             } else if (mXmlReader->name().toString() == QStringLiteral("title")) {
                 title = mXmlReader->readElementText();
             } else {
@@ -388,18 +416,7 @@ void GoogleContactStream::handleAtomEntry()
         // this entry was a contact.
         // the etag is the "version identifier".
         if (!contactEtag.isEmpty()) {
-            QContactExtendedDetail etagDetail;
-            for (const QContactExtendedDetail &detail : entryContact.details<QContactExtendedDetail>()) {
-                if (etagDetail.name() == QLatin1String("etag")) {
-                    etagDetail = detail;
-                    break;
-                }
-            }
-            if (etagDetail.name().isEmpty()) {
-                etagDetail.setName(QStringLiteral("etag"));
-            }
-            etagDetail.setData(contactEtag);
-            entryContact.saveDetail(&etagDetail);
+            saveContactEtag(&entryContact, contactEtag);
         }
 
         if (isInGroup) {
@@ -417,6 +434,8 @@ void GoogleContactStream::handleAtomEntry()
     if (isBatchOperationResponse) {
         if (!entryContact.detail<QContactGuid>().guid().isEmpty()) {
             response.contactGuid = entryContact.detail<QContactGuid>().guid();
+            response.etag = contactEtag;
+            response.unsupportedElements = unsupportedElements;
         }
         mAtom->addBatchOperationResponse(response.operationId, response);
     }
@@ -642,6 +661,8 @@ QContactDetail GoogleContactStream::handleEntryName()
                 name.setPrefix(mXmlReader->readElementText());
             } else if (mXmlReader->qualifiedName() == "gd:nameSuffix") {
                 name.setSuffix(mXmlReader->readElementText());
+            } else if (mXmlReader->qualifiedName() == "gd:fullName") {
+                name.setCustomLabel(mXmlReader->readElementText());
             }
         }
         mXmlReader->readNextStartElement();
@@ -972,16 +993,32 @@ void GoogleContactStream::encodeEtag(const QContact &qContact, bool needed)
 void GoogleContactStream::encodeName(const QContactName &name)
 {
     mXmlWriter->writeStartElement("gd:name");
-    if (!name.firstName().isEmpty())
-        mXmlWriter->writeTextElement("gd:givenName", name.firstName());
+
+    const QString firstName = name.firstName();
+    const QString lastName = name.lastName();
+
+    if (!firstName.isEmpty())
+        mXmlWriter->writeTextElement("gd:givenName", firstName);
     if (!name.middleName().isEmpty())
         mXmlWriter->writeTextElement("gd:additionalName", name.middleName());
-    if (!name.lastName().isEmpty())
-        mXmlWriter->writeTextElement("gd:familyName", name.lastName());
+    if (!lastName.isEmpty())
+        mXmlWriter->writeTextElement("gd:familyName", lastName);
     if (!name.prefix().isEmpty())
         mXmlWriter->writeTextElement("gd:namePrefix", name.prefix());
     if (!name.suffix().isEmpty())
         mXmlWriter->writeTextElement("gd:nameSuffix", name.suffix());
+
+    const QString fullName = (QStringList()
+            << name.prefix()
+            << SeasideCache::primaryName(firstName, lastName)
+            << name.middleName()
+            << SeasideCache::secondaryName(firstName, lastName)
+            << name.suffix()).join(' ');
+    if (!fullName.isEmpty())
+        mXmlWriter->writeTextElement("gd:fullName", fullName);
+    else if (!name.customLabel().isEmpty())
+        mXmlWriter->writeTextElement("gd:fullName", name.customLabel());
+
     mXmlWriter->writeEndElement();
 }
 

@@ -90,12 +90,14 @@ public:
     class BatchOperationResponse {
     public:
         BatchOperationResponse();
+        QStringList unsupportedElements;
         QString operationId;
         QString type;
         QString code;
         QString reason;
         QString reasonDescription;
         QString contactGuid;
+        QString etag;
         bool isError;
     };
     void addBatchOperationResponse(const QString &operationId, BatchOperationResponse response);

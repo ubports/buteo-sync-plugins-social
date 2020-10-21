@@ -68,6 +68,7 @@ public:
         Modify,
         Remove
     };
+    Q_ENUM(UpdateType)
 
 public:
     explicit GoogleContactStream(bool response, int accountId, const QString &accountEmail = QString(), QObject* parent = 0);
@@ -162,7 +163,6 @@ private:
     void encodeAnniversary(const QContactAnniversary &anniversary);
     void encodeOnlineAccount(const QContactOnlineAccount &onlineAccount);
     void encodeFamily(const QContactFamily &family);
-    void encodeDisplayLabel(const QContactDisplayLabel &displayLabel);
 
     void encodeUnknownElements(const QStringList &unknownElements);
 

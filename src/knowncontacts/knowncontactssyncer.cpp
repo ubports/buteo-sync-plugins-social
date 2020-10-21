@@ -238,7 +238,7 @@ static void setGuid(QContact *contact, const QString &id)
     Q_ASSERT(contact);
     auto detail = contact->detail<QContactGuid>();
     detail.setGuid(id);
-    contact->saveDetail(&detail);
+    contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
 }
 
 static void setNames(QContact *contact, const QSettings &file)
@@ -252,7 +252,7 @@ static void setNames(QContact *contact, const QSettings &file)
             detail.setFirstName(firstName);
         if (!lastName.isEmpty())
             detail.setLastName(lastName);
-        contact->saveDetail(&detail);
+        contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
     }
 }
 
@@ -268,7 +268,7 @@ static inline void addPhoneNumberDetail(QContact *contact, const QString &value,
             detail.setSubTypes({subType.value<int>()});
         if (context.isValid())
             detail.setContexts({context.value<int>()});
-        contact->saveDetail(&detail);
+        contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
     }
 }
 
@@ -291,7 +291,7 @@ static void setEmailAddress(QContact *contact, const QSettings &file)
         auto detail = findDetail<QContactEmailAddress>(
                 *contact, QContactEmailAddress::FieldEmailAddress, emailAddress);
         detail.setValue(QContactEmailAddress::FieldEmailAddress, emailAddress);
-        contact->saveDetail(&detail);
+        contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
     }
 }
 
@@ -309,7 +309,7 @@ static void setCompanyInfo(QContact *contact, const QSettings &file)
             detail.setTitle(title);
         if (!office.isEmpty())
             detail.setLocation(office);
-        contact->saveDetail(&detail);
+        contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
     }
 }
 
