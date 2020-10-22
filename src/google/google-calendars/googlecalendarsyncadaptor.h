@@ -108,8 +108,7 @@ private:
     mKCal::Notebook::Ptr notebookForCalendarId(int accountId, const QString &calendarId) const;
     void finishedRequestingRemoteEvents(int accountId, const QString &accessToken,
                                         const QString &calendarId, const QString &syncToken,
-                                        const QString &nextSyncToken, const QDateTime &since,
-                                        const QString &updateTimestampStr);
+                                        const QString &nextSyncToken, const QDateTime &since);
 
     static void setCalendarProperties(mKCal::Notebook::Ptr notebook,
                                       const CalendarInfo &calendarInfo,
@@ -132,7 +131,7 @@ private:
     QMap<int, bool> m_cleanSyncRequired;
 
     QStringList m_calendarsBeingRequested;               // calendarIds
-    QMap<QString, QString> m_calendarsFinishedRequested; // calendarId to updated timestamp string
+    QStringList m_calendarsFinishedRequested;            // calendarId to updated timestamp string
     QMap<QString, QString> m_calendarsThisSyncTokens;    // calendarId to sync token used during this sync cycle
     QMap<QString, QString> m_calendarsNextSyncTokens;    // calendarId to sync token to use during next sync cycle
     QMap<QString, QDateTime> m_calendarsSyncDate;        // calendarId to since date to use when determining delta
