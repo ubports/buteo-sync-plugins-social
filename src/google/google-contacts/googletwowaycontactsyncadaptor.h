@@ -148,6 +148,7 @@ private:
     void downloadContactAvatarImage(int accountId, const QString &accessToken, const QUrl &imageUrl, const QString &filename);
     void imageDownloaded(const QString &url, const QString &path, const QVariantMap &metadata);
 
+    void delayedTransformContactAvatars();
     void loadCollection(const QContactCollection &collection);
 
     void purgeAccount(int pid);
@@ -183,6 +184,7 @@ private:
 
     QMap<int, int> m_apiRequestsRemaining;
     QMap<int, QMap<QString, QString> > m_queuedAvatarsForDownload; // contact guid -> remote avatar path
+    QList<int> m_pendingAvatarRequests;
 
     bool m_allowFinalCleanup = false;
 };
