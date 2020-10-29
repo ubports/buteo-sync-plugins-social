@@ -41,6 +41,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QSettings>
 #include <QtGui/QImageReader>
+#include <QtCore/QTimer>
 
 #include <QtContacts/QContactCollectionFilter>
 #include <QtContacts/QContactIntersectionFilter>
@@ -610,6 +611,8 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
 
 void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &accessToken, ContactChangeNotifier contactChangeNotifier)
 {
+    Q_UNUSED(accessToken)
+
     // early out in case we lost connectivity
     if (syncAborted()) {
         SOCIALD_LOG_ERROR("aborting sync of account" << accountId);
@@ -617,10 +620,6 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
         // note: don't decrement here - it's done by contactsFinishedHandler().
         return;
     }
-
-    // download avatars for new and modified contacts
-    transformContactAvatars(m_remoteAdds[accountId], accountId, accessToken);
-    transformContactAvatars(m_remoteMods[accountId], accountId, accessToken);
 
     // now store the changes locally
     SOCIALD_LOG_TRACE("storing remote changes locally for account" << accountId);
@@ -634,6 +633,10 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
     } else {
         sqliteSync->remoteContactsDetermined(sqliteSync->m_collection, m_remoteAdds[accountId] + m_remoteMods[accountId]);
     }
+
+    m_pendingAvatarRequests.append(accountId);
+    QTimer::singleShot(0, this, &GoogleTwoWayContactSyncAdaptor::delayedTransformContactAvatars);
+    incrementSemaphore(accountId);
 }
 
 void GoogleTwoWayContactSyncAdaptor::upsyncLocalChanges(const QDateTime &localSince,
@@ -921,6 +924,18 @@ bool GoogleTwoWayContactSyncAdaptor::queueAvatarForDownload(int accountId, const
     }
 
     return false;
+}
+
+void GoogleTwoWayContactSyncAdaptor::delayedTransformContactAvatars()
+{
+    // download avatars for new and modified contacts
+    if (m_pendingAvatarRequests.count()) {
+        const int accountId = m_pendingAvatarRequests.takeLast();
+        transformContactAvatars(m_remoteAdds[accountId], accountId, m_accessTokens[accountId]);
+        transformContactAvatars(m_remoteMods[accountId], accountId, m_accessTokens[accountId]);
+
+        decrementSemaphore(accountId);
+    }
 }
 
 void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &remoteContacts, int accountId, const QString &accessToken)
