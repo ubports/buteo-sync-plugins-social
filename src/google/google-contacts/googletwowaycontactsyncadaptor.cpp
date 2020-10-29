@@ -553,7 +553,7 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
         if (newEtag.isEmpty()) {
             SOCIALD_LOG_ERROR("No etag found for contact:" << guid);
         } else if (newEtag == m_contactEtags[accountId].value(guid)) {
-            SOCIALD_LOG_INFO("Disregarding spurious remote modification for contact:" << guid);
+            SOCIALD_LOG_DEBUG("Disregarding spurious remote modification for contact:" << guid);
             continue;
         }
 
@@ -1180,7 +1180,7 @@ void GoogleTwoWayContactSyncAdaptor::loadCollection(const QContactCollection &co
     for (const QContact &contact : savedContacts) {
         const QString contactGuid = contact.detail<QContactGuid>().guid();
         if (contactGuid.isEmpty()) {
-            SOCIALD_LOG_INFO("No guid found for saved contact, must be new:" << contact.id());
+            SOCIALD_LOG_DEBUG("No guid found for saved contact, must be new:" << contact.id());
             continue;
         }
 
