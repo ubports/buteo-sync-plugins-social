@@ -661,8 +661,6 @@ QContactDetail GoogleContactStream::handleEntryName()
                 name.setPrefix(mXmlReader->readElementText());
             } else if (mXmlReader->qualifiedName() == "gd:nameSuffix") {
                 name.setSuffix(mXmlReader->readElementText());
-            } else if (mXmlReader->qualifiedName() == "gd:fullName") {
-                name.setCustomLabel(mXmlReader->readElementText());
             }
         }
         mXmlReader->readNextStartElement();
@@ -1008,6 +1006,8 @@ void GoogleContactStream::encodeName(const QContactName &name)
     if (!name.suffix().isEmpty())
         mXmlWriter->writeTextElement("gd:nameSuffix", name.suffix());
 
+    // Send the formatted fullName to the server. Otherwise if this field is missing, the server
+    // detects it as a spurious modification.
     const QString fullName = (QStringList()
             << name.prefix()
             << SeasideCache::primaryName(firstName, lastName)
@@ -1016,8 +1016,6 @@ void GoogleContactStream::encodeName(const QContactName &name)
             << name.suffix()).join(' ');
     if (!fullName.isEmpty())
         mXmlWriter->writeTextElement("gd:fullName", fullName);
-    else if (!name.customLabel().isEmpty())
-        mXmlWriter->writeTextElement("gd:fullName", name.customLabel());
 
     mXmlWriter->writeEndElement();
 }
