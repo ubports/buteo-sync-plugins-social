@@ -108,6 +108,7 @@ private:
     void finishedRequestingRemoteEvents(const QString &accessToken,
                                         const QString &calendarId, const QString &syncToken,
                                         const QString &nextSyncToken, const QDateTime &since);
+    void clampEventTimeToSync(KCalCore::Event::Ptr event) const;
 
     static void setCalendarProperties(mKCal::Notebook::Ptr notebook,
                                       const CalendarInfo &calendarInfo,
@@ -138,12 +139,13 @@ private:
     QMultiMap<QString, QPair<KCalCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
     QSet<QString> m_syncTokenFailure; // calendarIds suffering from 410 error due to invalid sync token
     QSet<QString> m_timeMinFailure;   // calendarIds suffering from 410 error due to invalid timeMin value
+    KCalCore::Incidence::List m_purgeList;
 
     mKCal::ExtendedCalendar::Ptr m_calendar;
     mKCal::ExtendedStorage::Ptr m_storage;
     mutable KCalCore::ICalFormat m_icalFormat;
     bool m_storageNeedsSave;
-    QDateTime m_originalLastSyncTimestamp;
+    KDateTime m_syncedDateTime;
 };
 
 #endif // GOOGLECALENDARSYNCADAPTOR_H
