@@ -621,9 +621,12 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
         return;
     }
 
+    // transform the avatars of the remote contacts before storing to the local database
+    transformContactAvatars(m_remoteAdds[accountId], accountId, m_accessTokens[accountId]);
+    transformContactAvatars(m_remoteMods[accountId], accountId, m_accessTokens[accountId]);
+
     // now store the changes locally
     SOCIALD_LOG_TRACE("storing remote changes locally for account" << accountId);
-
     GoogleContactSqliteSyncAdaptor *sqliteSync = m_sqliteSync[accountId];
     if (contactChangeNotifier == DetermineRemoteContactChanges) {
         sqliteSync->remoteContactChangesDetermined(sqliteSync->m_collection,
@@ -633,10 +636,6 @@ void GoogleTwoWayContactSyncAdaptor::continueSync(int accountId, const QString &
     } else {
         sqliteSync->remoteContactsDetermined(sqliteSync->m_collection, m_remoteAdds[accountId] + m_remoteMods[accountId]);
     }
-
-    m_pendingAvatarRequests.append(accountId);
-    QTimer::singleShot(0, this, &GoogleTwoWayContactSyncAdaptor::delayedTransformContactAvatars);
-    incrementSemaphore(accountId);
 }
 
 void GoogleTwoWayContactSyncAdaptor::upsyncLocalChanges(const QDateTime &localSince,
@@ -918,24 +917,12 @@ bool GoogleTwoWayContactSyncAdaptor::queueAvatarForDownload(int accountId, const
         metadata.insert(IMAGE_DOWNLOADER_TOKEN_KEY, accessToken);
         metadata.insert(IMAGE_DOWNLOADER_IDENTIFIER_KEY, contactGuid);
         incrementSemaphore(accountId);
-        m_workerObject->queue(imageUrl, metadata);
+        QMetaObject::invokeMethod(m_workerObject, "queue", Qt::QueuedConnection, Q_ARG(QString, imageUrl), Q_ARG(QVariantMap, metadata));
 
         return true;
     }
 
     return false;
-}
-
-void GoogleTwoWayContactSyncAdaptor::delayedTransformContactAvatars()
-{
-    // download avatars for new and modified contacts
-    if (m_pendingAvatarRequests.count()) {
-        const int accountId = m_pendingAvatarRequests.takeLast();
-        transformContactAvatars(m_remoteAdds[accountId], accountId, m_accessTokens[accountId]);
-        transformContactAvatars(m_remoteMods[accountId], accountId, m_accessTokens[accountId]);
-
-        decrementSemaphore(accountId);
-    }
 }
 
 void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &remoteContacts, int accountId, const QString &accessToken)
@@ -964,37 +951,34 @@ void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &re
 
         if (remoteImageUrl.isEmpty()) {
             // If the contact previously had an avatar, remove it.
-            const QString prevRemoteImageUrl = m_avatarImageUrls[accountId].value(contactGuid);
-
-            if (!prevRemoteImageUrl.isEmpty()) {
-                const QString savedLocalFile = GoogleContactImageDownloader::staticOutputFile(
-                        contactGuid, prevRemoteImageUrl);
+            const QString savedLocalFile = m_avatarImageUrls[accountId].value(contactGuid);
+            if (!savedLocalFile.isEmpty()) {
                 QFile::remove(savedLocalFile);
             }
-
         } else {
             // We have a remote avatar which we need to download.
+            const QString localFileName = avatar.imageUrl().isLocalFile()
+                    ? avatar.imageUrl().toString()
+                    : GoogleContactImageDownloader::staticOutputFile(contactGuid, remoteImageUrl);
             const QString prevAvatarEtag = m_avatarEtags[accountId].value(contactGuid);
             const QString newAvatarEtag = avatar.value(QContactAvatar::FieldMetaData).toString();
             const bool isNewAvatar = prevAvatarEtag.isEmpty();
             const bool isModifiedAvatar = !isNewAvatar && prevAvatarEtag != newAvatarEtag;
+            const bool isMissingFile = !QFile::exists(localFileName);
 
-            if (!isNewAvatar && !isModifiedAvatar) {
+            if (!isNewAvatar && !isModifiedAvatar && !isMissingFile) {
                 // Shouldn't happen as we won't get an avatar in the atom if it didn't change.
                 continue;
             }
 
             if (!avatar.imageUrl().isLocalFile()) {
-                // transform to a local file name.
-                const QString localFileName = GoogleContactImageDownloader::staticOutputFile(
-                        contactGuid, remoteImageUrl);
                 QFile::remove(localFileName);
 
                 // Save the avatar detail even though the image is not yet downloaded. It is
                 // downloaded after the sync transaction is written to the database.
                 avatar.setImageUrl(localFileName);
-                if (!curr.saveDetail(&avatar)) {
-                    SOCIALD_LOG_ERROR("Unable to save avatar detail");
+                if (!curr.saveDetail(&avatar, QContact::IgnoreAccessConstraints)) {
+                    SOCIALD_LOG_ERROR("Unable to transform avatar detail");
                 }
 
                 m_contactAvatars[accountId].insert(contactGuid, remoteImageUrl);
