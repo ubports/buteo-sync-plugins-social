@@ -631,7 +631,16 @@ Requires:   qt5-qtdeclarative-import-qttest
 %setup -q -n %{name}-%{version}
 
 %build
-%qmake5 "DEFINES+=OUT_OF_PROCESS_PLUGIN"
+%qmake5 "DEFINES+=OUT_OF_PROCESS_PLUGIN" \
+    "CONFIG+=dropbox" \
+    "CONFIG+=facebook" \
+    "CONFIG+=google" \
+    "CONFIG+=onedrive" \
+    "CONFIG+=twitter" \
+    "CONFIG+=vk" \
+    "CONFIG+=knowncontacts" \
+    "CONFIG+=calendar" \
+    "CONFIG+=build-tests"
 make %{_smp_mflags}
 
 %pre

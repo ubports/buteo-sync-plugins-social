@@ -1,5 +1,6 @@
 TEMPLATE = subdirs
 SUBDIRS = \
-    $$PWD/google-calendars \
     $$PWD/google-contacts \
     $$PWD/google-signon
+
+CONFIG(calendar): SUBDIRS += $$PWD/google-calendars
