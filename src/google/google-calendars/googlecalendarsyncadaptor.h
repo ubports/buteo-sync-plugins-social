@@ -117,6 +117,9 @@ private:
                                       const QString &syncProfile,
                                       const QString &ownerEmail);
 
+    const QList<KDateTime> getExceptionInstanceDates(const KCalCore::Event::Ptr event) const;
+    QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, bool setUidProperty = false) const;
+
 private Q_SLOTS:
     void calendarsFinishedHandler();
     void eventsFinishedHandler();
@@ -140,6 +143,7 @@ private:
     QSet<QString> m_syncTokenFailure; // calendarIds suffering from 410 error due to invalid sync token
     QSet<QString> m_timeMinFailure;   // calendarIds suffering from 410 error due to invalid timeMin value
     KCalCore::Incidence::List m_purgeList;
+    QMap<QString, KCalCore::Incidence::Ptr> m_deletedGcalIdToIncidence;
 
     mKCal::ExtendedCalendar::Ptr m_calendar;
     mKCal::ExtendedStorage::Ptr m_storage;
