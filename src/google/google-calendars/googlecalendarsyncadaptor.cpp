@@ -520,6 +520,8 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
                 SOCIALD_LOG_DEBUG("unable to parse RRULE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
             } else {
+                // Set the recurrence start to be the event start
+                rrule->setStartDt(event->dtStart());
                 kcalRecurrence->addRRule(rrule);
             }
         } else if (ruleStr.startsWith(QString::fromLatin1("exrule"), Qt::CaseInsensitive)) {
@@ -765,7 +767,6 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
         setGCalETag(event, jsonGCalETag);
     }
     setRemoteUidCustomField(event, json.value(QLatin1String("iCalUID")).toVariant().toString(), json.value(QLatin1String("id")).toVariant().toString());
-    extractRecurrence(json.value(QLatin1String("recurrence")).toArray(), event, icalFormat, exceptions);
     extractOrganizer(json.value(QLatin1String("creator")).toObject(), json.value(QLatin1String("organizer")).toObject(), event);
     extractAttendees(json.value(QLatin1String("attendees")).toArray(), event);
     UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, isReadOnly, setReadOnly, json.value(QLatin1String("locked")).toVariant().toBool(), changed)
@@ -791,6 +792,8 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
     } else {
         UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, hasEndDate, setHasEndDate, false, changed)
     }
+    // Recurrence rules use the event start time, so must be set after it
+    extractRecurrence(json.value(QLatin1String("recurrence")).toArray(), event, icalFormat, exceptions);
     if (isAllDay) {
         UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, allDay, setAllDay, true, changed)
     }
