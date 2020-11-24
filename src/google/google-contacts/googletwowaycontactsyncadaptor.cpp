@@ -244,6 +244,9 @@ void GoogleContactSqliteSyncAdaptor::syncFinishedSuccessfully()
     } else {
         m_collection.setId(savedCollection.id());
     }
+
+    // and trigger downloading avatars.
+    q->downloadAvatars(m_accountId);
 }
 
 void GoogleContactSqliteSyncAdaptor::syncFinishedWithError()
@@ -553,6 +556,22 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
         if (newEtag.isEmpty()) {
             SOCIALD_LOG_ERROR("No etag found for contact:" << guid);
         } else if (newEtag == m_contactEtags[accountId].value(guid)) {
+            // the etags match, so no remote changes have occurred.
+            // most likely this is a spurious change, however it
+            // may be the case that we have not yet downloaded the
+            // avatar for this contact.  Check this.
+            const QContactAvatar avatar = c.detail<QContactAvatar>();
+            const QString remoteImageUrl = avatar.imageUrl().toString();
+            const QString localFileName = remoteImageUrl.isEmpty()
+                                        ? QString()
+                                        : avatar.imageUrl().isLocalFile()
+                                            ? avatar.imageUrl().toString()
+                                            : GoogleContactImageDownloader::staticOutputFile(guid, remoteImageUrl);
+            if (!localFileName.isEmpty() && !QFile::exists(localFileName)) {
+                SOCIALD_LOG_DEBUG("Remote modification spurious except for missing avatar");
+                m_contactAvatars[accountId].insert(guid, remoteImageUrl); // outstanding avatars.
+                m_avatarEtags[accountId][guid] = avatar.value(QContactAvatar::FieldMetaData).toString();
+            }
             SOCIALD_LOG_DEBUG("Disregarding spurious remote modification for contact:" << guid);
             continue;
         }
@@ -782,9 +801,6 @@ void GoogleTwoWayContactSyncAdaptor::upsyncLocalChangesList(int accountId)
             }
         }
 
-        // Attempt to download any outstanding avatars.
-        queueOutstandingAvatars(accountId, m_accessTokens[accountId]);
-
         // Save the sync timestamp.
         GoogleContactSqliteSyncAdaptor *sqliteSync = m_sqliteSync.value(accountId);
         if (!sqliteSync->m_syncDateTime.isValid()) {
@@ -893,6 +909,12 @@ void GoogleTwoWayContactSyncAdaptor::postErrorHandler()
     sender()->setProperty("isError", QVariant::fromValue<bool>(true));
 }
 
+void GoogleTwoWayContactSyncAdaptor::downloadAvatars(int accountId)
+{
+    // Attempt to download any outstanding avatars.
+    queueOutstandingAvatars(accountId, m_accessTokens[accountId]);
+}
+
 void GoogleTwoWayContactSyncAdaptor::queueOutstandingAvatars(int accountId, const QString &accessToken)
 {
     int queuedCount = 0;
@@ -925,7 +947,7 @@ bool GoogleTwoWayContactSyncAdaptor::queueAvatarForDownload(int accountId, const
     return false;
 }
 
-void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &remoteContacts, int accountId, const QString &accessToken)
+void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &remoteContacts, int accountId, const QString &)
 {
     // The avatar detail from the remote contact will be of the form:
     // https://www.google.com/m8/feeds/photos/media/user@gmail.com/userId
@@ -981,11 +1003,9 @@ void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &re
                     SOCIALD_LOG_ERROR("Unable to transform avatar detail");
                 }
 
+                // queue outstanding avatar for download once all upsyncs are complete
                 m_contactAvatars[accountId].insert(contactGuid, remoteImageUrl);
                 m_avatarEtags[accountId][contactGuid] = newAvatarEtag;
-
-                // then trigger the download
-                queueAvatarForDownload(accountId, accessToken, contactGuid, remoteImageUrl);
             }
         }
     }

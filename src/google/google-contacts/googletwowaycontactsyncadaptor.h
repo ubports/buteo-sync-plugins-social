@@ -113,6 +113,8 @@ public:
                             const QList<QContact> &locallyDeleted,
                             int accountId);
 
+    void downloadAvatars(int accountId);
+
     QContactManager *m_contactManager = nullptr;
 
 protected:
