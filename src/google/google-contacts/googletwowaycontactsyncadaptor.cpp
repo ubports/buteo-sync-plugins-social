@@ -558,8 +558,8 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
         } else if (newEtag == m_contactEtags[accountId].value(guid)) {
             // the etags match, so no remote changes have occurred.
             // most likely this is a spurious change, however it
-            // may be the case that we have not yet downloaded the
-            // avatar for this contact.  Check this.
+            // may be the case that we have not yet transformed
+            // and/or downloaded the avatar for this contact.  Check this.
             const QContactAvatar avatar = c.detail<QContactAvatar>();
             const QString remoteImageUrl = avatar.imageUrl().toString();
             const QString localFileName = remoteImageUrl.isEmpty()
@@ -567,13 +567,27 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
                                         : avatar.imageUrl().isLocalFile()
                                             ? avatar.imageUrl().toString()
                                             : GoogleContactImageDownloader::staticOutputFile(guid, remoteImageUrl);
-            if (!localFileName.isEmpty() && !QFile::exists(localFileName)) {
-                SOCIALD_LOG_DEBUG("Remote modification spurious except for missing avatar");
-                m_contactAvatars[accountId].insert(guid, remoteImageUrl); // outstanding avatars.
-                m_avatarEtags[accountId][guid] = avatar.value(QContactAvatar::FieldMetaData).toString();
+            // compare to the db contact value.
+            const QString contactAvatarFile = m_avatarImageUrls[accountId].value(guid);
+            const QUrl contactAvatarUrl(contactAvatarFile); // scheme will be empty if it's a local file path.
+            const bool dbContactAvatarIsLocalFile = contactAvatarUrl.scheme().isEmpty() || contactAvatarUrl.isLocalFile();
+            if ((!contactAvatarFile.isEmpty() && dbContactAvatarIsLocalFile)
+                    || (contactAvatarFile.isEmpty() && localFileName.isEmpty())) {
+                // the db contact has already transformed the avatar detail
+                if (!localFileName.isEmpty() && !QFile::exists(localFileName)) {
+                    // but the avatar image has not yet been downloaded.
+                    SOCIALD_LOG_DEBUG("Remote modification spurious except for missing avatar");
+                    m_contactAvatars[accountId].insert(guid, remoteImageUrl); // enqueue outstanding avatar.
+                    m_avatarEtags[accountId][guid] = avatar.value(QContactAvatar::FieldMetaData).toString();
+                }
+                SOCIALD_LOG_DEBUG("Disregarding spurious remote modification for contact:" << guid);
+                continue;
+            } else {
+                // the value in the db contact has not been transformed to a local file path.
+                // the remote modification is spurious, but treat it as real in order
+                // to cause avatar transformation for the contact.
+                SOCIALD_LOG_DEBUG("Remote modification required for avatar transform for contact:" << guid);
             }
-            SOCIALD_LOG_DEBUG("Disregarding spurious remote modification for contact:" << guid);
-            continue;
         }
 
         // save the unsupportedElements data
@@ -978,8 +992,8 @@ void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &re
                 QFile::remove(savedLocalFile);
             }
         } else {
-            // We have a remote avatar which we need to download.
-            const QString localFileName = avatar.imageUrl().isLocalFile()
+            const bool isLocalFile = avatar.imageUrl().scheme().isEmpty() || avatar.imageUrl().isLocalFile();
+            const QString localFileName = isLocalFile
                     ? avatar.imageUrl().toString()
                     : GoogleContactImageDownloader::staticOutputFile(contactGuid, remoteImageUrl);
             const QString prevAvatarEtag = m_avatarEtags[accountId].value(contactGuid);
@@ -988,17 +1002,18 @@ void GoogleTwoWayContactSyncAdaptor::transformContactAvatars(QList<QContact> &re
             const bool isModifiedAvatar = !isNewAvatar && prevAvatarEtag != newAvatarEtag;
             const bool isMissingFile = !QFile::exists(localFileName);
 
-            if (!isNewAvatar && !isModifiedAvatar && !isMissingFile) {
+            if (!isNewAvatar && !isModifiedAvatar && !isMissingFile && isLocalFile) {
                 // Shouldn't happen as we won't get an avatar in the atom if it didn't change.
                 continue;
             }
 
-            if (!avatar.imageUrl().isLocalFile()) {
+            // We have a remote avatar which we need to download.
+            if (!isLocalFile) {
                 QFile::remove(localFileName);
 
                 // Save the avatar detail even though the image is not yet downloaded. It is
                 // downloaded after the sync transaction is written to the database.
-                avatar.setImageUrl(localFileName);
+                avatar.setImageUrl(QUrl::fromLocalFile(localFileName));
                 if (!curr.saveDetail(&avatar, QContact::IgnoreAccessConstraints)) {
                     SOCIALD_LOG_ERROR("Unable to transform avatar detail");
                 }

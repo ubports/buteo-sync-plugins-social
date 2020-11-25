@@ -707,7 +707,7 @@ QContactDetail GoogleContactStream::handleEntryPhoneNumber()
                 : QString();
     QString number = mXmlReader->readElementText();
 
-    SOCIALD_LOG_DEBUG("received phone type information from Google:" << rel << "for number:" << number);
+    SOCIALD_LOG_TRACE("received phone type information from Google:" << rel << "for number:" << number);
     if (rel == QStringLiteral("http://schemas.google.com/g/2005#home")) {
         phone.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeLandline);
         phone.setContexts(QContactDetail::ContextHome);
@@ -781,7 +781,7 @@ QContactDetail GoogleContactStream::handleEntryStructuredPostalAddress()
     }
 
     if (!rel.isEmpty()) {
-        SOCIALD_LOG_DEBUG("received address type information from Google:" << rel << "for address:" << address.street());
+        SOCIALD_LOG_TRACE("received address type information from Google:" << rel << "for address:" << address.street());
         if (rel == QStringLiteral("http://schemas.google.com/g/2005#home")) {
             address.setContexts(QContactDetail::ContextHome);
         } else if (rel == QStringLiteral("http://schemas.google.com/g/2005#work")) {
