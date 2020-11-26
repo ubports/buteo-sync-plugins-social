@@ -303,7 +303,7 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
     return retn;
 }
 
-QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> exceptions)
+QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> &exceptions)
 {
     QJsonArray retn;
 
@@ -508,7 +508,7 @@ void extractStartAndEnd(const QJsonObject &eventData,
     }
 }
 
-void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> exceptions)
+void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> &exceptions)
 {
     KCalCore::Recurrence *kcalRecurrence = event->recurrence();
     kcalRecurrence->clear(); // avoid adding duplicate recurrence information
@@ -1694,6 +1694,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
     int discardedLocalAdditions = 0, discardedLocalModifications = 0, discardedLocalRemovals = 0;
     int remoteAdditions = 0, remoteModifications = 0, remoteRemovals = 0, discardedRemoteModifications = 0, discardedRemoteRemovals = 0;
     QHash<QString, QJsonObject> unchangedRemoteModifications; // gcalId to eventData.
+    QStringList remoteAdditionIds;
 
     // For each each of the events downloaded from the server, determine
     // if the remote change invalidates a local change, or if a local
@@ -1731,7 +1732,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                         break;
                     }
                 }
-            } else if (allMap.contains(parentId) && !parentId.isEmpty()) {
+            } else if (!parentId.isEmpty() && (allMap.contains(parentId) || remoteAdditionIds.contains(parentId))) {
                 // this is a non-persistent occurrence deletion, we need to add an EXDATE to the base event.
                 // we treat this as a remote modification of the base event (ie, the EXDATE addition)
                 // and thus will discard any local modifications to the base event, and not upsync them.
@@ -1842,6 +1843,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
             SOCIALD_LOG_DEBUG("Have remote addition:" << eventId << "in" << calendarId);
             remoteAdditions++;
             m_changesFromDownsync.insertMulti(calendarId, qMakePair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject>(GoogleCalendarSyncAdaptor::Insert, eventData));
+            remoteAdditionIds.append(eventId);
         }
     }
 
@@ -1874,7 +1876,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
         Q_FOREACH (const QString &updatedGcalId, updatedMap.keys()) {
             KCalCore::Event::Ptr event = updatedMap.value(updatedGcalId);
             if (event) {
-                QJsonObject localEventData = kCalToJson (event, m_icalFormat);
+                QJsonObject localEventData = kCalToJson(event, m_icalFormat);
                 if (unchangedRemoteModifications.contains(updatedGcalId)
                         && !localModificationIsReal(localEventData, unchangedRemoteModifications.value(updatedGcalId), m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat)) {
                     // this local modification is spurious.  It may have been reported
@@ -2344,14 +2346,12 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
         // re-order remote changes so that additions of recurring series happen before additions of exception occurrences.
         // otherwise, the parent event may not exist when we attempt to insert the exception.
         // similarly, re-order remote deletions of exceptions so that they occur before remote deletions of series.
+        // So we will have this ordering:
+        // 1. Remote parent additions
+        // 2. Remote exception deletions
+        // 3. Remote exception additions
+        // 4. Remote parent deletions
         QList<QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > reorderedChangesFromDownsyncForCalendar;
-        for (int i = 0; i < changesFromDownsyncForCalendar.size(); ++i) {
-            const QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> &remoteChange(changesFromDownsyncForCalendar[i]);
-            QString parentId = remoteChange.second.value(QLatin1String("recurringEventId")).toVariant().toString();
-            if (parentId.isEmpty()) {
-                reorderedChangesFromDownsyncForCalendar.append(remoteChange);
-            }
-        }
         for (int i = 0; i < changesFromDownsyncForCalendar.size(); ++i) {
             const QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> &remoteChange(changesFromDownsyncForCalendar[i]);
             QString parentId = remoteChange.second.value(QLatin1String("recurringEventId")).toVariant().toString();
@@ -2360,6 +2360,17 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                     reorderedChangesFromDownsyncForCalendar.prepend(remoteChange);
                 } else {
                     reorderedChangesFromDownsyncForCalendar.append(remoteChange);
+                }
+            }
+        }
+        for (int i = 0; i < changesFromDownsyncForCalendar.size(); ++i) {
+            const QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> &remoteChange(changesFromDownsyncForCalendar[i]);
+            QString parentId = remoteChange.second.value(QLatin1String("recurringEventId")).toVariant().toString();
+            if (parentId.isEmpty()) {
+                if (remoteChange.first == GoogleCalendarSyncAdaptor::Delete) {
+                    reorderedChangesFromDownsyncForCalendar.append(remoteChange);
+                } else {
+                    reorderedChangesFromDownsyncForCalendar.prepend(remoteChange);
                 }
             }
         }
@@ -2381,9 +2392,14 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                     // this is a non-persistent occurrence, we need to add an EXDATE to the base event.
                     SOCIALD_LOG_DEBUG("Occurrence deleted remotely:" << eventId << "for recurrenceId:" << recurrenceId.toString());
                     KCalCore::Event::Ptr event = allLocalEventsMap.value(parentId);
-                    event->startUpdates();
-                    event->recurrence()->addExDateTime(recurrenceId);
-                    event->endUpdates();
+                    if (event) {
+                        event->startUpdates();
+                        event->recurrence()->addExDateTime(recurrenceId);
+                        event->endUpdates();
+                    } else {
+                        // The parent event should never be null by this point, but we guard against it just in case
+                        SOCIALD_LOG_ERROR("Deletion failed as the parent event" << parentId << "couldn't be found");
+                    }
                 } break;
                 case GoogleCalendarSyncAdaptor::Modify: {
                     SOCIALD_LOG_DEBUG("Event modified remotely:" << eventId);
@@ -2465,6 +2481,15 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                         continue; // we don't return, but instead attempt to finish other event modifications
                     }
                     m_recurringEventIdToKCalUid.insert(eventId, event->uid());
+
+                    // Add the new event to the local events map, in case there are any future modifications to it in the same sync
+                    QString gcalId = gCalEventId(event);
+                    if (gcalId.isEmpty()) {
+                        gcalId = upsyncedUidMapping.value(event->uid());
+                    }
+                    if (gcalId.size() && event) {
+                        allLocalEventsMap.insert(gcalId, event);
+                    }
                 } break;
                 default: break;
             }
