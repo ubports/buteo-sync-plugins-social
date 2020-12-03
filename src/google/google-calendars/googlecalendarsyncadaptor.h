@@ -69,8 +69,7 @@ private:
     };
 
     struct UpsyncChange {
-        UpsyncChange() : accountId(0), upsyncType(NoChange) {}
-        int accountId;
+        UpsyncChange() : upsyncType(NoChange) {}
         QString accessToken;
         ChangeType upsyncType;
         QString kcalEventId;
@@ -89,27 +88,27 @@ private:
         AccessRole access;
     };
 
-    void requestCalendars(int accountId, const QString &accessToken,
+    void requestCalendars(const QString &accessToken,
                           bool needCleanSync, const QString &pageToken = QString());
-    void requestEvents(int accountId, const QString &accessToken,
+    void requestEvents(const QString &accessToken,
                        const QString &calendarId, const QString &syncToken,
                        const QString &pageToken = QString());
-    void updateLocalCalendarNotebooks(int accountId, const QString &accessToken, bool needCleanSync);
-    QList<UpsyncChange> determineSyncDelta(int accountId, const QString &accessToken,
+    void updateLocalCalendarNotebooks(const QString &accessToken, bool needCleanSync);
+    QList<UpsyncChange> determineSyncDelta(const QString &accessToken,
                                            const QString &calendarId, const QDateTime &since);
-    void upsyncChanges(int accountId, const QString &accessToken,
+    void upsyncChanges(const QString &accessToken,
                        GoogleCalendarSyncAdaptor::ChangeType upsyncType,
                        const QString &kcalEventId, const KDateTime &recurrenceId, const QString &calendarId,
                        const QString &eventId,const QByteArray &eventData);
 
-    void applyRemoteChangesLocally(int accountId);
-    void updateLocalCalendarNotebookEvents(int accountId, const QString &calendarId);
+    void applyRemoteChangesLocally();
+    void updateLocalCalendarNotebookEvents(const QString &calendarId);
 
-    mKCal::Notebook::Ptr notebookForCalendarId(int accountId, const QString &calendarId) const;
-    void finishedRequestingRemoteEvents(int accountId, const QString &accessToken,
+    mKCal::Notebook::Ptr notebookForCalendarId(const QString &calendarId) const;
+    void finishedRequestingRemoteEvents(const QString &accessToken,
                                         const QString &calendarId, const QString &syncToken,
-                                        const QString &nextSyncToken, const QDateTime &since,
-                                        const QString &updateTimestampStr);
+                                        const QString &nextSyncToken, const QDateTime &since);
+    void clampEventTimeToSync(KCalCore::Event::Ptr event) const;
 
     static void setCalendarProperties(mKCal::Notebook::Ptr notebook,
                                       const CalendarInfo &calendarInfo,
@@ -118,21 +117,24 @@ private:
                                       const QString &syncProfile,
                                       const QString &ownerEmail);
 
+    const QList<KDateTime> getExceptionInstanceDates(const KCalCore::Event::Ptr event) const;
+    QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, bool setUidProperty = false) const;
+
 private Q_SLOTS:
     void calendarsFinishedHandler();
     void eventsFinishedHandler();
     void upsyncFinishedHandler();
 
 private:
-    QMap<int, QMap<QString, CalendarInfo> > m_serverCalendarIdToCalendarInfo;
-    QMap<int, QMap<QString, int> > m_serverCalendarIdToDefaultReminderTimes;
-    QMap<int, QMultiMap<QString, QJsonObject> > m_calendarIdToEventObjects;
-    QMap<int, QMap<QString, QString> > m_recurringEventIdToKCalUid;
-    QMap<int, bool> m_syncSucceeded;
-    QMap<int, bool> m_cleanSyncRequired;
+    QMap<QString, CalendarInfo> m_serverCalendarIdToCalendarInfo;
+    QMap<QString, int> m_serverCalendarIdToDefaultReminderTimes;
+    QMultiMap<QString, QJsonObject> m_calendarIdToEventObjects;
+    QMap<QString, QString> m_recurringEventIdToKCalUid;
+    bool m_syncSucceeded;
+    int m_accountId;
 
     QStringList m_calendarsBeingRequested;               // calendarIds
-    QMap<QString, QString> m_calendarsFinishedRequested; // calendarId to updated timestamp string
+    QStringList m_calendarsFinishedRequested;            // calendarId to updated timestamp string
     QMap<QString, QString> m_calendarsThisSyncTokens;    // calendarId to sync token used during this sync cycle
     QMap<QString, QString> m_calendarsNextSyncTokens;    // calendarId to sync token to use during next sync cycle
     QMap<QString, QDateTime> m_calendarsSyncDate;        // calendarId to since date to use when determining delta
@@ -140,12 +142,14 @@ private:
     QMultiMap<QString, QPair<KCalCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
     QSet<QString> m_syncTokenFailure; // calendarIds suffering from 410 error due to invalid sync token
     QSet<QString> m_timeMinFailure;   // calendarIds suffering from 410 error due to invalid timeMin value
+    KCalCore::Incidence::List m_purgeList;
+    QMap<QString, KCalCore::Incidence::Ptr> m_deletedGcalIdToIncidence;
 
     mKCal::ExtendedCalendar::Ptr m_calendar;
     mKCal::ExtendedStorage::Ptr m_storage;
     mutable KCalCore::ICalFormat m_icalFormat;
     bool m_storageNeedsSave;
-    QDateTime m_originalLastSyncTimestamp;
+    KDateTime m_syncedDateTime;
 };
 
 #endif // GOOGLECALENDARSYNCADAPTOR_H
