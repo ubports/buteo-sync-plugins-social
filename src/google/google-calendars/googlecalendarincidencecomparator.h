@@ -24,16 +24,16 @@
 
 #include <QtDebug>
 
-#include <memorycalendar.h>
 #include <extendedcalendar.h>
 #include <extendedstorage.h>
-#include <icalformat.h>
-#include <incidence.h>
-#include <event.h>
-#include <todo.h>
-#include <journal.h>
-#include <attendee.h>
-#include <kdatetime.h>
+
+#include <KCalendarCore/ICalFormat>
+#include <KCalendarCore/MemoryCalendar>
+#include <KCalendarCore/Incidence>
+#include <KCalendarCore/Event>
+#include <KCalendarCore/Todo>
+#include <KCalendarCore/Journal>
+#include <KCalendarCore/Attendee>
 
 #include "trace.h"
 
@@ -54,7 +54,7 @@
 }
 
 namespace GoogleCalendarIncidenceComparator {
-    void normalizePersonEmail(KCalCore::Person *p)
+    void normalizePersonEmail(KCalendarCore::Person *p)
     {
         QString email = p->email().replace(QStringLiteral("mailto:"), QString(), Qt::CaseInsensitive);
         if (email != p->email()) {
@@ -76,7 +76,7 @@ namespace GoogleCalendarIncidenceComparator {
         return true;
     }
 
-    bool eventsEqual(const KCalCore::Event::Ptr &a, const KCalCore::Event::Ptr &b, bool printDebug)
+    bool eventsEqual(const KCalendarCore::Event::Ptr &a, const KCalendarCore::Event::Ptr &b, bool printDebug)
     {
         GIC_RETURN_FALSE_IF_NOT_EQUAL_CUSTOM(a->dateEnd() != b->dateEnd(), "dateEnd", (a->dateEnd().toString() + " != " + b->dateEnd().toString()));
         GIC_RETURN_FALSE_IF_NOT_EQUAL(a, b, transparency(), "transparency");
@@ -107,7 +107,7 @@ namespace GoogleCalendarIncidenceComparator {
         return true;
     }
 
-    bool todosEqual(const KCalCore::Todo::Ptr &a, const KCalCore::Todo::Ptr &b, bool printDebug)
+    bool todosEqual(const KCalendarCore::Todo::Ptr &a, const KCalendarCore::Todo::Ptr &b, bool printDebug)
     {
         GIC_RETURN_FALSE_IF_NOT_EQUAL(a, b, hasCompletedDate(), "hasCompletedDate");
         GIC_RETURN_FALSE_IF_NOT_EQUAL_CUSTOM(a->dtRecurrence() != b->dtRecurrence(), "dtRecurrence", (a->dtRecurrence().toString() + " != " + b->dtRecurrence().toString()));
@@ -121,14 +121,14 @@ namespace GoogleCalendarIncidenceComparator {
         return true;
     }
 
-    bool journalsEqual(const KCalCore::Journal::Ptr &, const KCalCore::Journal::Ptr &, bool)
+    bool journalsEqual(const KCalendarCore::Journal::Ptr &, const KCalendarCore::Journal::Ptr &, bool)
     {
         // no journal-specific properties; it only uses the base incidence properties
         return true;
     }
 
     // Checks whether a specific set of properties are equal.
-    bool incidencesEqual(const KCalCore::Incidence::Ptr &a, const KCalCore::Incidence::Ptr &b, bool printDebug)
+    bool incidencesEqual(const KCalendarCore::Incidence::Ptr &a, const KCalendarCore::Incidence::Ptr &b, bool printDebug)
     {
         if (!a || !b) {
             qWarning() << "Invalid paramters! a:" << a << "b:" << b;
@@ -138,7 +138,7 @@ namespace GoogleCalendarIncidenceComparator {
         // Do not compare created() or lastModified() because we don't update these fields when
         // an incidence is updated by copyIncidenceProperties(), so they are guaranteed to be unequal.
         // TODO compare deref alarms and attachment lists to compare them also.
-        // Don't compare resources() for now because KCalCore may insert QStringList("") as the resources
+        // Don't compare resources() for now because KCalendarCore may insert QStringList("") as the resources
         // when in fact it should be QStringList(), which causes the comparison to fail.
         GIC_RETURN_FALSE_IF_NOT_EQUAL(a, b, type(), "type");
         GIC_RETURN_FALSE_IF_NOT_EQUAL(a, b, duration(), "duration");
@@ -170,8 +170,8 @@ namespace GoogleCalendarIncidenceComparator {
         }
 
         // Some servers insert a mailto: in the organizer email address, so ignore this when comparing organizers
-        KCalCore::Person personA(*a->organizer().data());
-        KCalCore::Person personB(*b->organizer().data());
+        KCalendarCore::Person personA(a->organizer());
+        KCalendarCore::Person personB(b->organizer());
         normalizePersonEmail(&personA);
         normalizePersonEmail(&personB);
         const QString aEmail = personA.email();
@@ -185,23 +185,23 @@ namespace GoogleCalendarIncidenceComparator {
         }
 
         switch (a->type()) {
-        case KCalCore::IncidenceBase::TypeEvent:
-            if (!eventsEqual(a.staticCast<KCalCore::Event>(), b.staticCast<KCalCore::Event>(), printDebug)) {
+        case KCalendarCore::IncidenceBase::TypeEvent:
+            if (!eventsEqual(a.staticCast<KCalendarCore::Event>(), b.staticCast<KCalendarCore::Event>(), printDebug)) {
                 return false;
             }
             break;
-        case KCalCore::IncidenceBase::TypeTodo:
-            if (!todosEqual(a.staticCast<KCalCore::Todo>(), b.staticCast<KCalCore::Todo>(), printDebug)) {
+        case KCalendarCore::IncidenceBase::TypeTodo:
+            if (!todosEqual(a.staticCast<KCalendarCore::Todo>(), b.staticCast<KCalendarCore::Todo>(), printDebug)) {
                 return false;
             }
             break;
-        case KCalCore::IncidenceBase::TypeJournal:
-            if (!journalsEqual(a.staticCast<KCalCore::Journal>(), b.staticCast<KCalCore::Journal>(), printDebug)) {
+        case KCalendarCore::IncidenceBase::TypeJournal:
+            if (!journalsEqual(a.staticCast<KCalendarCore::Journal>(), b.staticCast<KCalendarCore::Journal>(), printDebug)) {
                 return false;
             }
             break;
-        case KCalCore::IncidenceBase::TypeFreeBusy:
-        case KCalCore::IncidenceBase::TypeUnknown:
+        case KCalendarCore::IncidenceBase::TypeFreeBusy:
+        case KCalendarCore::IncidenceBase::TypeUnknown:
             SOCIALD_LOG_DEBUG_MAYBE("Unable to compare FreeBusy or Unknown incidence, assuming equal");
             break;
         }

@@ -31,8 +31,7 @@
 
 #include <extendedcalendar.h>
 #include <extendedstorage.h>
-#include <icalformat.h>
-#include <kdatetime.h>
+#include <KCalendarCore/ICalFormat>
 
 class GoogleCalendarSyncAdaptor : public GoogleDataTypeSyncAdaptor
 {
@@ -73,7 +72,7 @@ private:
         QString accessToken;
         ChangeType upsyncType;
         QString kcalEventId;
-        KDateTime recurrenceId;
+        QDateTime recurrenceId;
         QString calendarId;
         QString eventId;
         QByteArray eventData;
@@ -98,7 +97,7 @@ private:
                                            const QString &calendarId, const QDateTime &since);
     void upsyncChanges(const QString &accessToken,
                        GoogleCalendarSyncAdaptor::ChangeType upsyncType,
-                       const QString &kcalEventId, const KDateTime &recurrenceId, const QString &calendarId,
+                       const QString &kcalEventId, const QDateTime &recurrenceId, const QString &calendarId,
                        const QString &eventId,const QByteArray &eventData);
 
     void applyRemoteChangesLocally();
@@ -108,7 +107,7 @@ private:
     void finishedRequestingRemoteEvents(const QString &accessToken,
                                         const QString &calendarId, const QString &syncToken,
                                         const QString &nextSyncToken, const QDateTime &since);
-    void clampEventTimeToSync(KCalCore::Event::Ptr event) const;
+    void clampEventTimeToSync(KCalendarCore::Event::Ptr event) const;
 
     static void setCalendarProperties(mKCal::Notebook::Ptr notebook,
                                       const CalendarInfo &calendarInfo,
@@ -117,8 +116,8 @@ private:
                                       const QString &syncProfile,
                                       const QString &ownerEmail);
 
-    const QList<KDateTime> getExceptionInstanceDates(const KCalCore::Event::Ptr event) const;
-    QJsonObject kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, bool setUidProperty = false) const;
+    const QList<QDateTime> getExceptionInstanceDates(const KCalendarCore::Event::Ptr event) const;
+    QJsonObject kCalToJson(KCalendarCore::Event::Ptr event, KCalendarCore::ICalFormat &icalFormat, bool setUidProperty = false) const;
 
 private Q_SLOTS:
     void calendarsFinishedHandler();
@@ -139,17 +138,17 @@ private:
     QMap<QString, QString> m_calendarsNextSyncTokens;    // calendarId to sync token to use during next sync cycle
     QMap<QString, QDateTime> m_calendarsSyncDate;        // calendarId to since date to use when determining delta
     QMultiMap<QString, QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > m_changesFromDownsync; // calendarId to change
-    QMultiMap<QString, QPair<KCalCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
+    QMultiMap<QString, QPair<KCalendarCore::Event::Ptr, QJsonObject> > m_changesFromUpsync; // calendarId to event+upsyncResponse
     QSet<QString> m_syncTokenFailure; // calendarIds suffering from 410 error due to invalid sync token
     QSet<QString> m_timeMinFailure;   // calendarIds suffering from 410 error due to invalid timeMin value
-    KCalCore::Incidence::List m_purgeList;
-    QMap<QString, KCalCore::Incidence::Ptr> m_deletedGcalIdToIncidence;
+    KCalendarCore::Incidence::List m_purgeList;
+    QMap<QString, KCalendarCore::Incidence::Ptr> m_deletedGcalIdToIncidence;
 
     mKCal::ExtendedCalendar::Ptr m_calendar;
     mKCal::ExtendedStorage::Ptr m_storage;
-    mutable KCalCore::ICalFormat m_icalFormat;
+    mutable KCalendarCore::ICalFormat m_icalFormat;
     bool m_storageNeedsSave;
-    KDateTime m_syncedDateTime;
+    QDateTime m_syncedDateTime;
 };
 
 #endif // GOOGLECALENDARSYNCADAPTOR_H

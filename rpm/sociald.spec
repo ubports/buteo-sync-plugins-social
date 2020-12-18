@@ -41,7 +41,7 @@ A Buteo plugin which provides data synchronization with various social services.
 %package facebook-calendars
 Summary:    Provides calendar synchronisation with Facebook
 BuildRequires:  pkgconfig(libmkcal-qt5)
-BuildRequires:  pkgconfig(libkcalcoren-qt5)
+BuildRequires:  pkgconfig(KF5CalendarCore)
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-calendars
@@ -126,7 +126,7 @@ systemctl-user try-restart msyncd.service || :
 %package google-calendars
 Summary:    Provides calendar synchronisation with Google
 BuildRequires:  pkgconfig(libmkcal-qt5) >= 0.5.9
-BuildRequires:  pkgconfig(libkcalcoren-qt5)
+BuildRequires:  pkgconfig(KF5CalendarCore)
 Requires: %{name} = %{version}-%{release}
 
 %description google-calendars
@@ -498,7 +498,7 @@ systemctl-user restart msyncd.service || :
 %package vk-calendars
 Summary:    Provides calendar synchronisation with VK
 BuildRequires:  pkgconfig(libmkcal-qt5)
-BuildRequires:  pkgconfig(libkcalcoren-qt5)
+BuildRequires:  pkgconfig(KF5CalendarCore)
 Requires: %{name} = %{version}-%{release}
 
 %description vk-calendars

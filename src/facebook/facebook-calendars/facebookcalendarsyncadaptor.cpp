@@ -81,7 +81,7 @@ namespace {
 
 FacebookCalendarSyncAdaptor::FacebookCalendarSyncAdaptor(QObject *parent)
     : FacebookDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Calendars, parent)
-    , m_calendar(mKCal::ExtendedCalendar::Ptr(new mKCal::ExtendedCalendar(QLatin1String("UTC"))))
+    , m_calendar(mKCal::ExtendedCalendar::Ptr(new mKCal::ExtendedCalendar(QTimeZone::utc())))
     , m_storage(mKCal::ExtendedCalendar::defaultStorage(m_calendar))
     , m_storageNeedsSave(false)
 {
@@ -140,17 +140,17 @@ void FacebookCalendarSyncAdaptor::finalCleanup()
         // given incidence belongs to, so we have to instead load
         // everything and then find the ones which are ophaned.
         m_storage->load();
-        KCalCore::Incidence::List allIncidences = m_calendar->incidences();
+        KCalendarCore::Incidence::List allIncidences = m_calendar->incidences();
         mKCal::Notebook::List allNotebooks = m_storage->notebooks();
         QSet<QString> notebookIncidenceUids;
         foreach (mKCal::Notebook::Ptr notebook, allNotebooks) {
-            KCalCore::Incidence::List currNbIncidences;
+            KCalendarCore::Incidence::List currNbIncidences;
             m_storage->allIncidences(&currNbIncidences, notebook->uid());
-            foreach (KCalCore::Incidence::Ptr incidence, currNbIncidences) {
+            foreach (KCalendarCore::Incidence::Ptr incidence, currNbIncidences) {
                 notebookIncidenceUids.insert(incidence->uid());
             }
         }
-        foreach (const KCalCore::Incidence::Ptr incidence, allIncidences) {
+        foreach (const KCalendarCore::Incidence::Ptr incidence, allIncidences) {
             if (!notebookIncidenceUids.contains(incidence->uid())) {
                 // orphan/ghost incidence.  must be deleted.
                 SOCIALD_LOG_DEBUG("deleting orphan event with uid:" << incidence->uid());
@@ -355,23 +355,11 @@ void FacebookCalendarSyncAdaptor::finishedHandler()
                     endTimeString = startTimeString;
                 }
 
-                KDateTime parsedStartTime = KDateTime::fromString(startTimeString);
-                KDateTime parsedEndTime = KDateTime::fromString(endTimeString);
+                QDateTime parsedStartTime = QDateTime::fromString(startTimeString, Qt::ISODate);
+                QDateTime parsedEndTime = QDateTime::fromString(endTimeString, Qt::ISODate);
 
-                // Sometimes KDateTime cannot parse the timezone
-                // even if it should support it
-                // We are then doing it manually
-                if (parsedStartTime.isNull()) {
-                    parsedStartTime = KDateTime::fromString(startTimeString,
-                                                            QLatin1String("%Y-%m-%dT%H:%M:%S%z"));
-                }
-                if (parsedEndTime.isNull()) {
-                    parsedEndTime = KDateTime::fromString(endTimeString,
-                                                          QLatin1String("%Y-%m-%dT%H:%M:%S%z"));
-                }
-
-                parsedEvent.m_startTime = parsedStartTime.toLocalZone();
-                parsedEvent.m_endTime = parsedEndTime.toLocalZone();
+                parsedEvent.m_startTime = parsedStartTime.toTimeZone(QTimeZone::systemTimeZone());
+                parsedEvent.m_endTime = parsedEndTime.toTimeZone(QTimeZone::systemTimeZone());
                 parsedEvent.m_summary = dataMap.value(QLatin1String("name")).toString();
                 parsedEvent.m_description = dataMap.value(QLatin1String("description")).toString();
                 parsedEvent.m_location = dataMap.value(QLatin1String("place")).toObject().toVariantMap().value("name").toString();
@@ -445,7 +433,7 @@ void FacebookCalendarSyncAdaptor::processParsedEvents(int accountId)
     fbNotebook->setIsReadOnly(false);
 
     // We load incidences that are associated to Facebook into memory
-    KCalCore::Incidence::List dbEvents;
+    KCalendarCore::Incidence::List dbEvents;
     m_storage->loadNotebookIncidences(fbNotebook->uid());
     if (!m_storage->allIncidences(&dbEvents, fbNotebook->uid())) {
         SOCIALD_LOG_ERROR("unable to load Facebook events from database");
@@ -458,9 +446,9 @@ void FacebookCalendarSyncAdaptor::processParsedEvents(int accountId)
         // find the local event associated with this event.
         bool foundLocal = false;
         const FacebookParsedEvent &parsedEvent = m_parsedEvents[fbId];
-        Q_FOREACH (KCalCore::Incidence::Ptr incidence, dbEvents) {
+        Q_FOREACH (KCalendarCore::Incidence::Ptr incidence, dbEvents) {
             if (incidence->uid().endsWith(QStringLiteral(":%1").arg(fbId))) {
-                KCalCore::Event::Ptr event = m_calendar->event(incidence->uid());
+                KCalendarCore::Event::Ptr event = m_calendar->event(incidence->uid());
                 if (!event) continue; // not a valid event incidence.
                 // found. If it has been modified remotely, then modify locally.
                 foundLocal = true;
@@ -478,9 +466,6 @@ void FacebookCalendarSyncAdaptor::processParsedEvents(int accountId)
                     event->setDtStart(parsedEvent.m_startTime);
                     if (parsedEvent.m_endExists) {
                         event->setDtEnd(parsedEvent.m_endTime);
-                        event->setHasEndDate(true);
-                    } else {
-                        event->setHasEndDate(false);
                     }
                     if (parsedEvent.m_isDateOnly) {
                         event->setAllDay(true);
@@ -497,7 +482,7 @@ void FacebookCalendarSyncAdaptor::processParsedEvents(int accountId)
 
         // if not found locally, it must be a new addition.
         if (!foundLocal) {
-            KCalCore::Event::Ptr event = KCalCore::Event::Ptr(new KCalCore::Event);
+            KCalendarCore::Event::Ptr event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
             QString eventUid = QUuid::createUuid().toString();
             eventUid = eventUid.mid(1); // remove leading {
             eventUid.chop(1);           // remove trailing }
@@ -509,9 +494,6 @@ void FacebookCalendarSyncAdaptor::processParsedEvents(int accountId)
             event->setDtStart(parsedEvent.m_startTime);
             if (parsedEvent.m_endExists) {
                 event->setDtEnd(parsedEvent.m_endTime);
-                event->setHasEndDate(true);
-            } else {
-                event->setHasEndDate(false);
             }
             if (parsedEvent.m_isDateOnly) {
                 event->setAllDay(true);
@@ -524,7 +506,7 @@ void FacebookCalendarSyncAdaptor::processParsedEvents(int accountId)
     }
 
     // Any local events which were not seen, must have been removed remotely.
-    Q_FOREACH (KCalCore::Incidence::Ptr incidence, dbEvents) {
+    Q_FOREACH (KCalendarCore::Incidence::Ptr incidence, dbEvents) {
         if (!seenLocalEvents.contains(incidence->uid())) {
             // note: have to delete from calendar after loaded from calendar.
             m_calendar->deleteIncidence(m_calendar->incidence(incidence->uid()));

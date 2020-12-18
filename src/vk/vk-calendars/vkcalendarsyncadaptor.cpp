@@ -23,14 +23,14 @@
 #define SOCIALD_VK_MAX_CALENDAR_ENTRY_RESULTS 100
 
 namespace {
-    bool eventNeedsUpdate(KCalCore::Event::Ptr event, const QJsonObject &json)
+    bool eventNeedsUpdate(KCalendarCore::Event::Ptr event, const QJsonObject &json)
     {
         // TODO: compare data, determine if we need to update
         Q_UNUSED(event)
         Q_UNUSED(json)
         return true;
     }
-    void jsonToKCal(const QString &vkId, const QJsonObject &json, KCalCore::Event::Ptr event, bool isUpdate)
+    void jsonToKCal(const QString &vkId, const QJsonObject &json, KCalendarCore::Event::Ptr event, bool isUpdate)
     {
         SOCIALD_LOG_DEBUG("Converting group event JSON to calendar event:" << json);
         if (!isUpdate) {
@@ -46,13 +46,10 @@ namespace {
         event->setLocation(eventAddress.isEmpty() ? addressTitle : eventAddress);
         if (json.contains(QStringLiteral("start_date"))) {
             uint startTime = json.value(QStringLiteral("start_date")).toDouble();
-            event->setDtStart(KDateTime(QDateTime::fromTime_t(startTime)));
+            event->setDtStart(QDateTime::fromTime_t(startTime));
             if (json.contains(QStringLiteral("end_date"))) {
                 uint endTime = json.value(QStringLiteral("end_date")).toDouble();
-                event->setHasEndDate(true);
-                event->setDtEnd(KDateTime(QDateTime::fromTime_t(endTime)));
-            } else {
-                event->setHasEndDate(false);
+                event->setDtEnd(QDateTime::fromTime_t(endTime));
             }
         }
     }
@@ -60,7 +57,7 @@ namespace {
 
 VKCalendarSyncAdaptor::VKCalendarSyncAdaptor(QObject *parent)
     : VKDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Calendars, parent)
-    , m_calendar(mKCal::ExtendedCalendar::Ptr(new mKCal::ExtendedCalendar(QLatin1String("UTC"))))
+    , m_calendar(mKCal::ExtendedCalendar::Ptr(new mKCal::ExtendedCalendar(QTimeZone::utc())))
     , m_storage(mKCal::ExtendedCalendar::defaultStorage(m_calendar))
     , m_storageNeedsSave(false)
 {
@@ -115,11 +112,11 @@ void VKCalendarSyncAdaptor::finalize(int accountId)
         // Build up a map of existing events, then determine A/M/R delta.
         int addedCount = 0, modifiedCount = 0, removedCount = 0;
         m_storage->loadNotebookIncidences(m_vkNotebook->uid());
-        KCalCore::Incidence::List allIncidences;
+        KCalendarCore::Incidence::List allIncidences;
         m_storage->allIncidences(&allIncidences, m_vkNotebook->uid());
         QSet<QString> serverSideEventIds = m_eventObjects[accountId].keys().toSet();
-        Q_FOREACH (const KCalCore::Incidence::Ptr incidence, allIncidences) {
-            KCalCore::Event::Ptr event = m_calendar->event(incidence->uid());
+        Q_FOREACH (const KCalendarCore::Incidence::Ptr incidence, allIncidences) {
+            KCalendarCore::Event::Ptr event = m_calendar->event(incidence->uid());
             // when we add new events, we generate the uid like QUUID:vkId
             // to ensure that even after removal/re-add, the uid is unique.
             const QString &eventUid = event->uid();
@@ -156,7 +153,7 @@ void VKCalendarSyncAdaptor::finalize(int accountId)
         Q_FOREACH (const QString &vkId, serverSideEventIds) {
             m_vkNotebook->setIsReadOnly(false); // temporarily
             const QJsonObject &eventObject(m_eventObjects[accountId][vkId]);
-            KCalCore::Event::Ptr event = KCalCore::Event::Ptr(new KCalCore::Event);
+            KCalendarCore::Event::Ptr event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
             jsonToKCal(vkId, eventObject, event, false); // direct conversion
             event->setReadOnly(true);
             if (!m_calendar->addEvent(event, m_vkNotebook->uid())) {

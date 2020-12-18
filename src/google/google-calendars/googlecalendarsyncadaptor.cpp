@@ -36,9 +36,6 @@
 #include <QtSql/QSqlQuery>
 #include <QtSql/QSqlError>
 
-#include <ksystemtimezone.h>
-#include <kdatetime.h>
-
 #include <Accounts/Account>
 #include <Accounts/Manager>
 #include <Accounts/Service>
@@ -108,11 +105,11 @@ void setGhostEventCleanupPerformed()
     settingsFile.sync();
 }
 
-void uniteIncidenceLists(const KCalCore::Incidence::List &first, KCalCore::Incidence::List *second)
+void uniteIncidenceLists(const KCalendarCore::Incidence::List &first, KCalendarCore::Incidence::List *second)
 {
     int originalSecondSize = second->size();
     bool foundMatch = false;
-    Q_FOREACH (KCalCore::Incidence::Ptr inc, first) {
+    Q_FOREACH (KCalendarCore::Incidence::Ptr inc, first) {
         foundMatch = false;
         for (int i = 0; i < originalSecondSize; ++i) {
             if (inc->uid() == second->at(i)->uid() && inc->recurrenceId() == second->at(i)->recurrenceId()) {
@@ -127,7 +124,7 @@ void uniteIncidenceLists(const KCalCore::Incidence::List &first, KCalCore::Incid
     }
 }
 
-QString gCalEventId(KCalCore::Incidence::Ptr event)
+QString gCalEventId(KCalendarCore::Incidence::Ptr event)
 {
     // we abuse the comments field to store our gcal-id.
     // we should use a custom property, but those are deleted on incidence deletion.
@@ -140,7 +137,7 @@ QString gCalEventId(KCalCore::Incidence::Ptr event)
     return QString();
 }
 
-void setGCalEventId(KCalCore::Incidence::Ptr event, const QString &id)
+void setGCalEventId(KCalendarCore::Incidence::Ptr event, const QString &id)
 {
     // we abuse the comments field to store our gcal-id.
     // we should use a custom property, but those are deleted on incidence deletion.
@@ -148,14 +145,16 @@ void setGCalEventId(KCalCore::Incidence::Ptr event, const QString &id)
     Q_FOREACH (const QString &comment, comments) {
         if (comment.startsWith("jolla-sociald:gcal-id:")) {
             // remove any existing gcal-id comment.
-            event->removeComment(comment);
+            if (!event->removeComment(comment)) {
+                SOCIALD_LOG_DEBUG("Unable to remove comment:" << comment);
+            }
             break;
         }
     }
     event->addComment(QStringLiteral("jolla-sociald:gcal-id:%1").arg(id));
 }
 
-void setRemoteUidCustomField(KCalCore::Incidence::Ptr event, const QString &uid, const QString &id)
+void setRemoteUidCustomField(KCalendarCore::Incidence::Ptr event, const QString &uid, const QString &id)
 {
     // store it also in a custom property purely for invitation lookup purposes.
     if (!uid.isEmpty()) {
@@ -172,18 +171,18 @@ void setRemoteUidCustomField(KCalCore::Incidence::Ptr event, const QString &uid,
     }
 }
 
-QString gCalETag(KCalCore::Incidence::Ptr event)
+QString gCalETag(KCalendarCore::Incidence::Ptr event)
 {
     return event->customProperty("jolla-sociald", "gcal-etag");
 }
 
-void setGCalETag(KCalCore::Incidence::Ptr event, const QString &etag)
+void setGCalETag(KCalendarCore::Incidence::Ptr event, const QString &etag)
 {
     // note: custom properties are purged on incidence deletion.
     event->setCustomProperty("jolla-sociald", "gcal-etag", etag);
 }
 
-QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDateOnly)
+QList<QDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDateOnly)
 {
     // possible forms:
     // RDATE:19970714T123000Z
@@ -193,7 +192,7 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
     // RDATE;VALUE=PERIOD:19960403T020000Z/19960403T040000Z,19960404T010000Z/PT3H
     // RDATE;VALUE=DATE:19970101,19970120
 
-    QList<KDateTime> retn;
+    QList<QDateTime> retn;
     QString str = exrdatestr;
     *isDateOnly = false; // by default.
 
@@ -214,14 +213,14 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
             Q_FOREACH (const QString &dtstr, dts) {
                 if (dtstr.endsWith('Z')) {
                     // UTC
-                    KDateTime kdt = KDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT);
-                    kdt.setTimeSpec(KDateTime::Spec::UTC());
-                    retn.append(kdt);
+                    QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT);
+                    dt.setTimeSpec(Qt::UTC);
+                    retn.append(dt);
                 } else {
                     // Floating time
-                    KDateTime kdt = KDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
-                    kdt.setTimeSpec(KDateTime::Spec::ClockTime());
-                    retn.append(kdt);
+                    QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
+                    dt.setTimeSpec(Qt::LocalTime);
+                    retn.append(dt);
                 }
             }
         } else if (str.startsWith("VALUE=DATE:", Qt::CaseInsensitive)) {
@@ -229,8 +228,7 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
             QStringList dts = str.split(',');
             Q_FOREACH(const QString &dstr, dts) {
                 QDate date = QLocale::c().toDate(dstr, RFC5545_QDATE_FORMAT);
-                KDateTime kdt(date, KDateTime::Spec::ClockTime());
-                retn.append(kdt);
+                retn.append(QDateTime(date));
             }
         } else if (str.startsWith("VALUE=PERIOD:", Qt::CaseInsensitive)) {
             SOCIALD_LOG_ERROR("unsupported parameter in ex/rdate string:" << exrdatestr);
@@ -238,25 +236,25 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
         } else if (str.startsWith("TZID=") && str.contains(':')) {
             str.remove(0, 5);
             QString tzidstr = str.mid(0, str.indexOf(':')); // something like: "Australia/Brisbane"
-            KTimeZone tz = KSystemTimeZones::zone(tzidstr);
+            QTimeZone tz(tzidstr.toUtf8());
             str.remove(0, tzidstr.size()+1);
             QStringList dts = str.split(',');
             Q_FOREACH (const QString &dtstr, dts) {
-                KDateTime kdt = KDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
-                if (!kdt.isValid()) {
+                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
+                if (!dt.isValid()) {
                     // try parsing from alternate formats
-                    kdt = KDateTime::fromString(dtstr, RFC3339_FORMAT_NTZC);
+                    dt = QDateTime::fromString(dtstr, RFC3339_FORMAT_NTZC);
                 }
-                if (!kdt.isValid()) {
+                if (!dt.isValid()) {
                     SOCIALD_LOG_ERROR("unable to parse datetime from ex/rdate string:" << exrdatestr);
                 } else {
                     if (tz.isValid()) {
-                        kdt.setTimeSpec(tz);
+                        dt.setTimeZone(tz);
                     } else {
-                        kdt.setTimeSpec(KDateTime::Spec::ClockTime());
+                        dt.setTimeSpec(Qt::LocalTime);
                         SOCIALD_LOG_INFO("WARNING: unknown tzid:" << tzidstr << "; assuming clock-time instead!");
                     }
-                    retn.append(kdt);
+                    retn.append(dt);
                 }
             }
         } else {
@@ -268,31 +266,31 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
         Q_FOREACH (const QString &dtstr, dts) {
             if (dtstr.endsWith('Z')) {
                 // UTC
-                KDateTime kdt = KDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT);
-                if (!kdt.isValid()) {
+                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT);
+                if (!dt.isValid()) {
                     // try parsing from alternate formats
-                    kdt = KDateTime::fromString(dtstr, RFC3339_FORMAT);
+                    dt = QDateTime::fromString(dtstr, RFC3339_FORMAT);
                 }
-                if (!kdt.isValid()) {
+                if (!dt.isValid()) {
                     SOCIALD_LOG_ERROR("unable to parse datetime from ex/rdate string:" << exrdatestr);
                 } else {
                     // parsed successfully
-                    kdt.setTimeSpec(KDateTime::Spec::UTC());
-                    retn.append(kdt);
+                    dt.setTimeSpec(Qt::UTC);
+                    retn.append(dt);
                 }
             } else {
                 // Floating time
-                KDateTime kdt = KDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
-                if (!kdt.isValid()) {
+                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
+                if (!dt.isValid()) {
                     // try parsing from alternate formats
-                    kdt = KDateTime::fromString(dtstr, RFC3339_FORMAT_NTZC);
+                    dt = QDateTime::fromString(dtstr, RFC3339_FORMAT_NTZC);
                 }
-                if (!kdt.isValid()) {
+                if (!dt.isValid()) {
                     SOCIALD_LOG_ERROR("unable to parse datetime from ex/rdate string:" << exrdatestr);
                 } else {
                     // parsed successfully
-                    kdt.setTimeSpec(KDateTime::Spec::ClockTime());
-                    retn.append(kdt);
+                    dt.setTimeSpec(Qt::LocalTime);
+                    retn.append(dt);
                 }
             }
         }
@@ -303,20 +301,20 @@ QList<KDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
     return retn;
 }
 
-QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> &exceptions)
+QJsonArray recurrenceArray(KCalendarCore::Event::Ptr event, KCalendarCore::ICalFormat &icalFormat, const QList<QDateTime> &exceptions)
 {
     QJsonArray retn;
 
     // RRULE
-    KCalCore::Recurrence *kcalRecurrence = event->recurrence();
-    Q_FOREACH (KCalCore::RecurrenceRule *rrule, kcalRecurrence->rRules()) {
+    KCalendarCore::Recurrence *kcalRecurrence = event->recurrence();
+    Q_FOREACH (KCalendarCore::RecurrenceRule *rrule, kcalRecurrence->rRules()) {
         QString rruleStr = icalFormat.toString(rrule);
         rruleStr.replace("\r\n", "");
         retn.append(QJsonValue(rruleStr));
     }
 
     // EXRULE
-    Q_FOREACH (KCalCore::RecurrenceRule *exrule, kcalRecurrence->exRules()) {
+    Q_FOREACH (KCalendarCore::RecurrenceRule *exrule, kcalRecurrence->exRules()) {
         QString exruleStr = icalFormat.toString(exrule);
         exruleStr.replace("RRULE", "EXRULE");
         exruleStr.replace("\r\n", "");
@@ -336,11 +334,11 @@ QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &ica
 
     // RDATE (date-time)
     QString rdatetimes;
-    Q_FOREACH (const KDateTime &rdatetime, kcalRecurrence->rDateTimes()) {
-        if (rdatetime.timeSpec() == KDateTime::Spec::ClockTime()) {
+    Q_FOREACH (const QDateTime &rdatetime, kcalRecurrence->rDateTimes()) {
+        if (rdatetime.timeSpec() == Qt::LocalTime) {
             rdatetimes.append(rdatetime.toString(RFC5545_KDATETIME_FORMAT_NTZC));
         } else {
-            rdatetimes.append(rdatetime.toUtc().toString(RFC5545_KDATETIME_FORMAT));
+            rdatetimes.append(rdatetime.toUTC().toString(RFC5545_KDATETIME_FORMAT));
         }
         rdatetimes.append(',');
     }
@@ -354,7 +352,7 @@ QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &ica
     Q_FOREACH (const QDate &exdate, kcalRecurrence->exDates()) {
         // mkcal adds an EXDATE for each exception event, whereas Google does not
         // So we only include the EXDATE if there's no exception associated with it
-        if (!exceptions.contains(KDateTime(exdate))) {
+        if (!exceptions.contains(QDateTime(exdate))) {
             exdates.append(QLocale::c().toString(exdate, RFC5545_QDATE_FORMAT));
             exdates.append(',');
         }
@@ -366,14 +364,14 @@ QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &ica
 
     // EXDATE (date-time)
     QString exdatetimes;
-    Q_FOREACH (const KDateTime &exdatetime, kcalRecurrence->exDateTimes()) {
+    Q_FOREACH (const QDateTime &exdatetime, kcalRecurrence->exDateTimes()) {
         // mkcal adds an EXDATE for each exception event, whereas Google does not
         // So we only include the EXDATE if there's no exception associated with it
         if (!exceptions.contains(exdatetime)) {
-            if (exdatetime.timeSpec() == KDateTime::Spec::ClockTime()) {
+            if (exdatetime.timeSpec() == Qt::LocalTime) {
                 exdatetimes.append(exdatetime.toString(RFC5545_KDATETIME_FORMAT_NTZC));
             } else {
-                exdatetimes.append(exdatetime.toUtc().toString(RFC5545_KDATETIME_FORMAT));
+                exdatetimes.append(exdatetime.toUTC().toString(RFC5545_KDATETIME_FORMAT));
             }
             exdatetimes.append(',');
         }
@@ -386,37 +384,37 @@ QJsonArray recurrenceArray(KCalCore::Event::Ptr event, KCalCore::ICalFormat &ica
     return retn;
 }
 
-KDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
+QDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
 {
     QString recurrenceIdStr = originalStartTime.value(QLatin1String("dateTime")).toVariant().toString();
     QString recurrenceIdTzStr = originalStartTime.value(QLatin1String("timeZone")).toVariant().toString();
-    KDateTime recurrenceId = KDateTime::fromString(recurrenceIdStr, RFC3339_FORMAT);
+    QDateTime recurrenceId = QDateTime::fromString(recurrenceIdStr, RFC3339_FORMAT);
     if (!recurrenceIdTzStr.isEmpty()) {
-        recurrenceId = recurrenceId.toTimeSpec(KTimeZone(recurrenceIdTzStr));
+        recurrenceId = recurrenceId.toTimeZone(QTimeZone(recurrenceIdTzStr.toLatin1()));
     }
     return recurrenceId;
 }
 
-KDateTime parseDateTimeString(const QString &dateTimeStr)
+QDateTime parseDateTimeString(const QString &dateTimeStr)
 {
-    KDateTime parsedTime = KDateTime::fromString(dateTimeStr, RFC3339_FORMAT);
-    KDateTime ntzcTime = KDateTime::fromString(dateTimeStr, RFC3339_FORMAT_NTZC);
+    QDateTime parsedTime = QDateTime::fromString(dateTimeStr, RFC3339_FORMAT);
+    QDateTime ntzcTime = QDateTime::fromString(dateTimeStr, RFC3339_FORMAT_NTZC);
 
     if (ntzcTime.time() > parsedTime.time()) {
         parsedTime = ntzcTime;
     }
 
-    // different format?  let KDateTime detect the format automatically.
     if (parsedTime.isNull()) {
-        parsedTime = KDateTime::fromString(dateTimeStr);
+        qWarning() << "Unable to parse date time from string:" << dateTimeStr;
+        return QDateTime();
     }
 
-    return parsedTime.toLocalZone();
+    return parsedTime.toTimeZone(QTimeZone::systemTimeZone());
 }
 
 void extractCreatedAndUpdated(const QJsonObject &eventData,
-                              KDateTime *created,
-                              KDateTime *updated)
+                              QDateTime *created,
+                              QDateTime *updated)
 {
     const QString createdStr = eventData.value(QLatin1String("created")).toVariant().toString();
     const QString updatedStr = eventData.value(QLatin1String("updated")).toVariant().toString();
@@ -436,8 +434,8 @@ void extractStartAndEnd(const QJsonObject &eventData,
                         bool *startIsDateOnly,
                         bool *endIsDateOnly,
                         bool *isAllDay,
-                        KDateTime *start,
-                        KDateTime *end)
+                        QDateTime *start,
+                        QDateTime *end)
 {
     *startIsDateOnly = false, *endIsDateOnly = false;
     QString startTimeString, endTimeString;
@@ -468,8 +466,7 @@ void extractStartAndEnd(const QJsonObject &eventData,
         if (!*startIsDateOnly) {
             *start = parseDateTimeString(startTimeString);
         } else {
-            *start = KDateTime(QLocale::c().toDate(startTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
-            start->setDateOnly(true);
+            *start = QDateTime(QLocale::c().toDate(startTimeString, QDATEONLY_FORMAT));
         }
     }
 
@@ -495,27 +492,25 @@ void extractStartAndEnd(const QJsonObject &eventData,
                     // multi-day all-day event.
                     // as noted above, Google will send all-day events as having an end-date
                     // of real-end-date+1 in order to conform to iCal spec (exclusive end dt).
-                    *end = KDateTime(QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT).addDays(-1), QTime(), KDateTime::ClockTime);
-                    end->setDateOnly(true);
+                    *end = QDateTime(QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT).addDays(-1));
                     *isAllDay = true;
                 }
             } else {
-                *end = KDateTime(QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT), QTime(), KDateTime::ClockTime);
-                end->setDateOnly(true);
+                *end = QDateTime(QLocale::c().toDate(endTimeString, QDATEONLY_FORMAT));
                 *isAllDay = false;
             }
         }
     }
 }
 
-void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> &exceptions)
+void extractRecurrence(const QJsonArray &recurrence, KCalendarCore::Event::Ptr event, KCalendarCore::ICalFormat &icalFormat, const QList<QDateTime> &exceptions)
 {
-    KCalCore::Recurrence *kcalRecurrence = event->recurrence();
+    KCalendarCore::Recurrence *kcalRecurrence = event->recurrence();
     kcalRecurrence->clear(); // avoid adding duplicate recurrence information
     for (int i = 0; i < recurrence.size(); ++i) {
         QString ruleStr = recurrence.at(i).toString();
         if (ruleStr.startsWith(QString::fromLatin1("rrule"), Qt::CaseInsensitive)) {
-            KCalCore::RecurrenceRule *rrule = new KCalCore::RecurrenceRule;
+            KCalendarCore::RecurrenceRule *rrule = new KCalendarCore::RecurrenceRule;
             if (!icalFormat.fromString(rrule, ruleStr.mid(6))) {
                 SOCIALD_LOG_DEBUG("unable to parse RRULE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
@@ -525,7 +520,7 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
                 kcalRecurrence->addRRule(rrule);
             }
         } else if (ruleStr.startsWith(QString::fromLatin1("exrule"), Qt::CaseInsensitive)) {
-            KCalCore::RecurrenceRule *exrule = new KCalCore::RecurrenceRule;
+            KCalendarCore::RecurrenceRule *exrule = new KCalendarCore::RecurrenceRule;
             if (!icalFormat.fromString(exrule, ruleStr.mid(7))) {
                 SOCIALD_LOG_DEBUG("unable to parse EXRULE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
@@ -534,12 +529,12 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
             }
         } else if (ruleStr.startsWith(QString::fromLatin1("rdate"), Qt::CaseInsensitive)) {
             bool isDateOnly = false;
-            QList<KDateTime> rdatetimes = datetimesFromExRDateStr(ruleStr, &isDateOnly);
+            QList<QDateTime> rdatetimes = datetimesFromExRDateStr(ruleStr, &isDateOnly);
             if (!rdatetimes.size()) {
                 SOCIALD_LOG_DEBUG("unable to parse RDATE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
             } else {
-                Q_FOREACH (const KDateTime &kdt, rdatetimes) {
+                Q_FOREACH (const QDateTime &kdt, rdatetimes) {
                     if (isDateOnly) {
                         kcalRecurrence->addRDate(kdt.date());
                     } else {
@@ -549,12 +544,12 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
             }
         } else if (ruleStr.startsWith(QString::fromLatin1("exdate"), Qt::CaseInsensitive)) {
             bool isDateOnly = false;
-            QList<KDateTime> exdatetimes = datetimesFromExRDateStr(ruleStr, &isDateOnly);
+            QList<QDateTime> exdatetimes = datetimesFromExRDateStr(ruleStr, &isDateOnly);
             if (!exdatetimes.size()) {
                 SOCIALD_LOG_DEBUG("unable to parse EXDATE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
             } else {
-                Q_FOREACH (const KDateTime &kdt, exdatetimes) {
+                Q_FOREACH (const QDateTime &kdt, exdatetimes) {
                     if (isDateOnly) {
                         kcalRecurrence->addExDate(kdt.date());
                     } else {
@@ -570,8 +565,8 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
 
     // Add an extra EXDATE for each exception event the calendar
     // Google doesn't include these as EXDATE (following the spec) whereas mkcal does
-    for (const KDateTime exception : exceptions) {
-        if (exception.isDateOnly()) {
+    for (const QDateTime exception : exceptions) {
+        if (exception.time().isNull()) {
             kcalRecurrence->addExDate(exception.date());
         } else {
             kcalRecurrence->addExDateTime(exception);
@@ -579,66 +574,62 @@ void extractRecurrence(const QJsonArray &recurrence, KCalCore::Event::Ptr event,
     }
 }
 
-void extractOrganizer(const QJsonObject &creatorObj, const QJsonObject &organizerObj, KCalCore::Event::Ptr event)
+void extractOrganizer(const QJsonObject &creatorObj, const QJsonObject &organizerObj, KCalendarCore::Event::Ptr event)
 {
     if (!organizerObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
                     || !organizerObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
-            KCalCore::Person::Ptr organizer(new KCalCore::Person(
+            KCalendarCore::Person organizer(
                     organizerObj.value(QLatin1String("displayName")).toVariant().toString(),
-                    organizerObj.value(QLatin1String("email")).toVariant().toString()));
+                    organizerObj.value(QLatin1String("email")).toVariant().toString());
             event->setOrganizer(organizer);
     } else if (!creatorObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
                 || !creatorObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
-        KCalCore::Person::Ptr organizer(new KCalCore::Person(
+        KCalendarCore::Person organizer(
                 creatorObj.value(QLatin1String("displayName")).toVariant().toString(),
-                creatorObj.value(QLatin1String("email")).toVariant().toString()));
-        event->setOrganizer(organizer);
-    } else {
-        KCalCore::Person::Ptr organizer(new KCalCore::Person);
+                creatorObj.value(QLatin1String("email")).toVariant().toString());
         event->setOrganizer(organizer);
     }
 }
 
-void extractAttendees(const QJsonArray &attendees, KCalCore::Event::Ptr event)
+void extractAttendees(const QJsonArray &attendees, KCalendarCore::Event::Ptr event)
 {
     event->clearAttendees();
     for (int i = 0; i < attendees.size(); ++i) {
         QJsonObject attendeeObj = attendees.at(i).toObject();
         if (!attendeeObj.value(QLatin1String("organizer")).toVariant().toBool()) {
-            KCalCore::Attendee::Ptr attendee(new KCalCore::Attendee(
+            KCalendarCore::Attendee attendee(
                     attendeeObj.value(QLatin1String("displayName")).toVariant().toString(),
-                    attendeeObj.value(QLatin1String("email")).toVariant().toString()));
+                    attendeeObj.value(QLatin1String("email")).toVariant().toString());
             if (attendeeObj.find(QLatin1String("optional")) != attendeeObj.end()) {
                 if (attendeeObj.value(QLatin1String("optional")).toVariant().toBool()) {
-                    attendee->setRole(KCalCore::Attendee::OptParticipant);
+                    attendee.setRole(KCalendarCore::Attendee::OptParticipant);
                 } else {
-                    attendee->setRole(KCalCore::Attendee::ReqParticipant);
+                    attendee.setRole(KCalendarCore::Attendee::ReqParticipant);
                 }
             }
             if (attendeeObj.find(QLatin1String("responseStatus")) != attendeeObj.end()) {
                 const QString &responseValue = attendeeObj.value(QLatin1String("responseStatus")).toVariant().toString();
                 if (responseValue == "needsAction") {
-                    attendee->setStatus(KCalCore::Attendee::NeedsAction);
+                    attendee.setStatus(KCalendarCore::Attendee::NeedsAction);
                 } else if (responseValue == "accepted") {
-                    attendee->setStatus(KCalCore::Attendee::Accepted);
+                    attendee.setStatus(KCalendarCore::Attendee::Accepted);
                 } else if (responseValue == "declined") {
-                    attendee->setStatus(KCalCore::Attendee::Declined);
+                    attendee.setStatus(KCalendarCore::Attendee::Declined);
                 } else {
-                    attendee->setStatus(KCalCore::Attendee::Tentative);
+                    attendee.setStatus(KCalendarCore::Attendee::Tentative);
                 }
             }
-            attendee->setRSVP(true);
+            attendee.setRSVP(true);
             event->addAttendee(attendee);
         } else {
-            KCalCore::Person::Ptr calOrganizer = event->organizer();
-            if (!calOrganizer.isNull() && !calOrganizer->isEmpty()) {
+            if (!event->organizer().isEmpty()) {
                 continue;
             }
             if (!attendeeObj.value(QLatin1String("displayName")).toVariant().toString().isEmpty()
                         || !attendeeObj.value(QLatin1String("email")).toVariant().toString().isEmpty()) {
-                KCalCore::Person::Ptr organizer(new KCalCore::Person(
+                KCalendarCore::Person organizer(
                         attendeeObj.value(QLatin1String("displayName")).toVariant().toString(),
-                        attendeeObj.value(QLatin1String("email")).toVariant().toString()));
+                        attendeeObj.value(QLatin1String("email")).toVariant().toString());
                 event->setOrganizer(organizer);
             }
         }
@@ -665,7 +656,7 @@ void extractAttendees(const QJsonArray &attendees, KCalCore::Event::Ptr event)
         event->endUpdates();                                                        \
     }
 
-void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defaultReminderStartOffset, bool *changed)
+void extractAlarms(const QJsonObject &json, KCalendarCore::Event::Ptr event, int defaultReminderStartOffset, bool *changed)
 {
     QSet<int> startOffsets;
     if (json.contains(QStringLiteral("reminders"))) {
@@ -690,11 +681,11 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
         for (QSet<int>::const_iterator it = startOffsets.constBegin(); it != startOffsets.constEnd(); it++) {
             const int startOffset = (*it) * -60; // convert minutes to seconds (before event)
             SOCIALD_LOG_DEBUG("event needs reminder with start offset (seconds):" << startOffset);
-            KCalCore::Alarm::List alarms = event->alarms();
+            KCalendarCore::Alarm::List alarms = event->alarms();
             int alarmsCount = 0;
             for (int i = 0; i < alarms.count(); ++i) {
                 // we don't count Procedure type alarms.
-                if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
+                if (alarms.at(i)->type() != KCalendarCore::Alarm::Procedure) {
                     alarmsCount += 1;
                     if (alarms.at(i)->startOffset().asSeconds() == startOffset) {
                         SOCIALD_LOG_DEBUG("event already has reminder with start offset (seconds):" << startOffset);
@@ -711,27 +702,27 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
         }
         if (needRemoveAndRecreate) {
             START_EVENT_UPDATES_IF_REQUIRED(event, changed);
-            KCalCore::Alarm::List alarms = event->alarms();
+            KCalendarCore::Alarm::List alarms = event->alarms();
             for (int i = 0; i < alarms.count(); ++i) {
-                if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
+                if (alarms.at(i)->type() != KCalendarCore::Alarm::Procedure) {
                     event->removeAlarm(alarms.at(i));
                 }
             }
             for (QSet<int>::const_iterator it = startOffsets.constBegin(); it != startOffsets.constEnd(); it++) {
                 const int startOffset = (*it) * -60; // convert minutes to seconds (before event)
                 SOCIALD_LOG_DEBUG("setting event reminder with start offset (seconds):" << startOffset);
-                KCalCore::Alarm::Ptr alarm = event->newAlarm();
+                KCalendarCore::Alarm::Ptr alarm = event->newAlarm();
                 alarm->setEnabled(true);
-                alarm->setStartOffset(KCalCore::Duration(startOffset));
+                alarm->setStartOffset(KCalendarCore::Duration(startOffset));
             }
         }
     }
     if (startOffsets.isEmpty()) {
         // no reminders were defined in the json received from Google.
         // remove any alarms as required from the local event.
-        KCalCore::Alarm::List alarms = event->alarms();
+        KCalendarCore::Alarm::List alarms = event->alarms();
         for (int i = 0; i < alarms.count(); ++i) {
-            if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
+            if (alarms.at(i)->type() != KCalendarCore::Alarm::Procedure) {
                 SOCIALD_LOG_DEBUG("removing event reminder with start offset (seconds):" << alarms.at(i)->startOffset().asSeconds());
                 START_EVENT_UPDATES_IF_REQUIRED(event, changed);
                 event->removeAlarm(alarms.at(i));
@@ -740,7 +731,7 @@ void extractAlarms(const QJsonObject &json, KCalCore::Event::Ptr event, int defa
     }
 }
 
-void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int defaultReminderStartOffset, KCalCore::ICalFormat &icalFormat, const QList<KDateTime> exceptions, bool *changed)
+void jsonToKCal(const QJsonObject &json, KCalendarCore::Event::Ptr event, int defaultReminderStartOffset, KCalendarCore::ICalFormat &icalFormat, const QList<QDateTime> exceptions, bool *changed)
 {
     Q_ASSERT(!event.isNull());
     bool alreadyStarted = *changed; // if this is true, we don't need to call startUpdates/endUpdates() in this function.
@@ -752,7 +743,7 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
         return; // this event has not changed server-side since we last saw it.
     }
 
-    KDateTime createdTimestamp, updatedTimestamp, start, end;
+    QDateTime createdTimestamp, updatedTimestamp, start, end;
     bool startExists = false, endExists = false;
     bool startIsDateOnly = false, endIsDateOnly = false;
     bool isAllDay = false;
@@ -786,11 +777,8 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
     if (endExists) {
         if (!event->hasEndDate() || event->dtEnd() != end) {
             START_EVENT_UPDATES_IF_REQUIRED(event, changed);
-            event->setHasEndDate(true);
             event->setDtEnd(end);
         }
-    } else {
-        UPDATE_EVENT_PROPERTY_IF_REQUIRED(event, hasEndDate, setHasEndDate, false, changed)
     }
     // Recurrence rules use the event start time, so must be set after it
     extractRecurrence(json.value(QLatin1String("recurrence")).toArray(), event, icalFormat, exceptions);
@@ -801,7 +789,7 @@ void jsonToKCal(const QJsonObject &json, KCalCore::Event::Ptr event, int default
     END_EVENT_UPDATES_IF_REQUIRED(event, changed, !alreadyStarted);
 }
 
-bool remoteModificationIsReal(const QJsonObject &json, KCalCore::Event::Ptr event)
+bool remoteModificationIsReal(const QJsonObject &json, KCalendarCore::Event::Ptr event)
 {
     if (gCalEventId(event) != json.value(QLatin1String("id")).toVariant().toString()) {
         return true; // this event is either a partial-upsync-artifact or a new remote addition.
@@ -812,13 +800,13 @@ bool remoteModificationIsReal(const QJsonObject &json, KCalCore::Event::Ptr even
     return false; // this event has not changed server-side since we last saw it.
 }
 
-bool localModificationIsReal(const QJsonObject &local, const QJsonObject &remote, int defaultReminderStartOffset, KCalCore::ICalFormat &icalFormat)
+bool localModificationIsReal(const QJsonObject &local, const QJsonObject &remote, int defaultReminderStartOffset, KCalendarCore::ICalFormat &icalFormat)
 {
     bool changed = true;
-    KCalCore::Event::Ptr localEvent = KCalCore::Event::Ptr(new KCalCore::Event);
-    KCalCore::Event::Ptr remoteEvent = KCalCore::Event::Ptr(new KCalCore::Event);
-    jsonToKCal(local, localEvent, defaultReminderStartOffset, icalFormat, QList<KDateTime>(), &changed);
-    jsonToKCal(remote, remoteEvent, defaultReminderStartOffset, icalFormat, QList<KDateTime>(), &changed);
+    KCalendarCore::Event::Ptr localEvent = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
+    KCalendarCore::Event::Ptr remoteEvent = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
+    jsonToKCal(local, localEvent, defaultReminderStartOffset, icalFormat, QList<QDateTime>(), &changed);
+    jsonToKCal(remote, remoteEvent, defaultReminderStartOffset, icalFormat, QList<QDateTime>(), &changed);
     if (GoogleCalendarIncidenceComparator::incidencesEqual(localEvent, remoteEvent, true)) {
         return false; // they're equal, so the local modification is not real.
     }
@@ -871,7 +859,7 @@ GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
     : GoogleDataTypeSyncAdaptor(SocialNetworkSyncAdaptor::Calendars, parent)
     , m_syncSucceeded(false)
     , m_accountId(0)
-    , m_calendar(mKCal::ExtendedCalendar::Ptr(new mKCal::ExtendedCalendar(QLatin1String("UTC"))))
+    , m_calendar(mKCal::ExtendedCalendar::Ptr(new mKCal::ExtendedCalendar(QTimeZone::utc())))
     , m_storage(mKCal::ExtendedCalendar::defaultStorage(m_calendar))
     , m_storageNeedsSave(false)
 {
@@ -906,14 +894,14 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
             for (const QString &calendarId : m_syncTokenFailure) {
                 calendarsRequiringChange.insert(calendarId);
             }
-            const KDateTime yesterdayDate = KDateTime::currentDateTime(KDateTime::Spec::UTC()).addDays(-1);
+            const QDateTime yesterdayDate = QDateTime::currentDateTimeUtc().addDays(-1);
             for (const QString &calendarId : calendarsRequiringChange) {
                 // this codepath is hit if the server replied with HTTP 410 for the sync token or timeMin value.
                 if (mKCal::Notebook::Ptr notebook = notebookForCalendarId(calendarId)) {
                     if (m_syncTokenFailure.contains(calendarId)) {
                         // this sync cycle failed due to the sync token being invalidated server-side.
                         // trigger clean sync with wide time span on next sync.
-                        notebook->setSyncDate(KDateTime());
+                        notebook->setSyncDate(QDateTime());
                     } else if (m_timeMinFailure.contains(calendarId)) {
                         // this sync cycle failed due to the timeMin value being too far in the past.
                         // trigger clean sync with short time span on next sync.
@@ -988,19 +976,19 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
         // loading all events from the database is expensive.
         SOCIALD_LOG_INFO("performing ghost event cleanup");
         m_storage->load();
-        KCalCore::Incidence::List allIncidences;
+        KCalendarCore::Incidence::List allIncidences;
         m_storage->allIncidences(&allIncidences);
         mKCal::Notebook::List allNotebooks = m_storage->notebooks();
         QSet<QString> notebookIncidenceUids;
         foreach (mKCal::Notebook::Ptr notebook, allNotebooks) {
-            KCalCore::Incidence::List currNbIncidences;
+            KCalendarCore::Incidence::List currNbIncidences;
             m_storage->allIncidences(&currNbIncidences, notebook->uid());
-            foreach (KCalCore::Incidence::Ptr incidence, currNbIncidences) {
+            foreach (KCalendarCore::Incidence::Ptr incidence, currNbIncidences) {
                 notebookIncidenceUids.insert(incidence->uid());
             }
         }
         int foundOrphans = 0;
-        foreach (const KCalCore::Incidence::Ptr incidence, allIncidences) {
+        foreach (const KCalendarCore::Incidence::Ptr incidence, allIncidences) {
             if (!notebookIncidenceUids.contains(incidence->uid())) {
                 // orphan/ghost incidence.  must be deleted.
                 SOCIALD_LOG_DEBUG("deleting orphan event with uid:" << incidence->uid());
@@ -1063,7 +1051,7 @@ void GoogleCalendarSyncAdaptor::beginSync(int accountId, const QString &accessTo
     m_purgeList.clear();
     m_deletedGcalIdToIncidence.clear();
     m_syncSucceeded = true; // set to false on error
-    m_syncedDateTime = KDateTime::currentUtcDateTime();
+    m_syncedDateTime = QDateTime::currentDateTimeUtc();
     requestCalendars(accessToken, needCleanSync);
 }
 
@@ -1279,7 +1267,7 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
     // for a notebook, as it implements the SQL query using an inequality on both modifiedAfter
     // and createdBefore; so instead we have to build a datetime which "should" satisfy
     // the inequality for all possible local modifications detectable since the last sync.
-    const KDateTime syncDate = notebook ? notebook->syncDate().addSecs(1) : KDateTime();
+    const QDateTime syncDate = notebook ? notebook->syncDate().addSecs(1) : QDateTime();
     bool needCleanSync = syncToken.isEmpty() || syncDate.isNull() || !syncDate.isValid();
 
     if (!needCleanSync) {
@@ -1307,7 +1295,7 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
         // and we detected that case and wrote the next sync date value to use here.
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"),
                                                   syncDate.isValid()
-                                                        ? syncDate.dateTime().toString(Qt::ISODate)
+                                                        ? syncDate.toString(Qt::ISODate)
                                                         : QDateTime::currentDateTimeUtc().addYears(-1).toString(Qt::ISODate)));
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMax"),
                                                   QDateTime::currentDateTimeUtc().addYears(2).toString(Qt::ISODate)));
@@ -1336,7 +1324,7 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
         reply->setProperty("accessToken", accessToken);
         reply->setProperty("calendarId", calendarId);
         reply->setProperty("syncToken", needCleanSync ? QString() : syncToken);
-        reply->setProperty("since", syncDate.dateTime());
+        reply->setProperty("since", syncDate);
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)),
                 this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)),
@@ -1478,7 +1466,7 @@ void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(const QString &ac
     }
 
     // We're about to perform the delta, so record the time to use for the next sync
-    m_syncedDateTime = KDateTime::currentUtcDateTime();
+    m_syncedDateTime = QDateTime::currentDateTimeUtc();
 
     // determine local changes to upsync.
     Q_FOREACH (const QString &finishedCalendarId, m_calendarsFinishedRequested) {
@@ -1510,21 +1498,16 @@ void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(const QString &ac
 
 // Return a list of all dates in the recurrence pattern that have an exception event associated with them
 // Events must be loaded into memeory first before calling this method
-const QList<KDateTime> GoogleCalendarSyncAdaptor::getExceptionInstanceDates(const KCalCore::Event::Ptr event) const
+const QList<QDateTime> GoogleCalendarSyncAdaptor::getExceptionInstanceDates(const KCalendarCore::Event::Ptr event) const
 {
-    QList<KDateTime> exceptions;
+    QList<QDateTime> exceptions;
 
     // Get all the instances of the event
-    KCalCore::Incidence::List instances = m_calendar->instances(event);
-    for (const KCalCore::Incidence::Ptr incidence : instances) {
+    KCalendarCore::Incidence::List instances = m_calendar->instances(event);
+    for (const KCalendarCore::Incidence::Ptr incidence : instances) {
         if (incidence->hasRecurrenceId()) {
             // Record its recurrence Id
-            const KDateTime &recurrence = incidence->recurrenceId();
-            if (recurrence.isDateOnly()) {
-                exceptions += recurrence;
-            } else {
-                exceptions += recurrence;
-            }
+            exceptions += incidence->recurrenceId();
         }
     }
 
@@ -1592,9 +1575,9 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
     }
 
     // load local events from the database.
-    KCalCore::Incidence::List deletedList, extraDeletedList, addedList, updatedList, allList;
-    QMap<QString, KCalCore::Event::Ptr> allMap, updatedMap;
-    QMap<QString, QPair<QString, KDateTime> > deletedMap; // gcalId to incidenceUid,recurrenceId
+    KCalendarCore::Incidence::List deletedList, extraDeletedList, addedList, updatedList, allList;
+    QMap<QString, KCalendarCore::Event::Ptr> allMap, updatedMap;
+    QMap<QString, QPair<QString, QDateTime> > deletedMap; // gcalId to incidenceUid,recurrenceId
     QSet<QString> cleanSyncDeletionAdditions; // gcalIds
 
     if (since.isValid() && !googleNotebook.isNull()) {
@@ -1605,8 +1588,8 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
         } else {
             m_storage->loadNotebookIncidences(googleNotebook->uid());
             m_storage->allIncidences(&allList, googleNotebook->uid());
-            m_storage->insertedIncidences(&addedList, KDateTime(since), googleNotebook->uid());
-            m_storage->modifiedIncidences(&updatedList, KDateTime(since), googleNotebook->uid());
+            m_storage->insertedIncidences(&addedList, QDateTime(since), googleNotebook->uid());
+            m_storage->modifiedIncidences(&updatedList, QDateTime(since), googleNotebook->uid());
 
             // mkcal's implementation of deletedIncidences() is unusual.  It returns any event
             // which was deleted after the second (datetime) parameter, IF AND ONLY IF
@@ -1616,16 +1599,16 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
             // any events which were added to the database due to the previous sync cycle
             // will (most likely) have been added within 1 second of the sync anchor timestamp.
             // To work around this, we need to retrieve deleted incidences twice, and unite them.
-            m_storage->deletedIncidences(&deletedList, KDateTime(since), googleNotebook->uid());
-            m_storage->deletedIncidences(&extraDeletedList, KDateTime(since).addSecs(1), googleNotebook->uid());
+            m_storage->deletedIncidences(&deletedList, QDateTime(since), googleNotebook->uid());
+            m_storage->deletedIncidences(&extraDeletedList, QDateTime(since).addSecs(1), googleNotebook->uid());
             uniteIncidenceLists(extraDeletedList, &deletedList);
 
-            Q_FOREACH(const KCalCore::Incidence::Ptr incidence, allList) {
+            Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, allList) {
                 if (incidence.isNull()) {
                     SOCIALD_LOG_DEBUG("Ignoring null incidence returned from allIncidences()");
                     continue;
                 }
-                KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
+                KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
                 QString gcalId = gCalEventId(incidence);
                 if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
                     // partially upsynced artifact.  It may need to be updated with gcalId comment field.
@@ -1637,12 +1620,12 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                     allMap.insert(gcalId, eventPtr);
                 } // else, newly added locally, no gcalId yet.
             }
-            Q_FOREACH(const KCalCore::Incidence::Ptr incidence, updatedList) {
+            Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, updatedList) {
                 if (incidence.isNull()) {
                     SOCIALD_LOG_DEBUG("Ignoring null incidence returned from modifiedIncidences()");
                     continue;
                 }
-                KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
+                KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
                 QString gcalId = gCalEventId(incidence);
                 if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
                     // TODO: can this codepath be hit?  If it was a partial upsync artifact,
@@ -1656,7 +1639,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                     updatedMap.insert(gcalId, eventPtr);
                 } // else, newly added+updated locally, no gcalId yet.
             }
-            Q_FOREACH(const KCalCore::Incidence::Ptr incidence, deletedList) {
+            Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, deletedList) {
                 if (incidence.isNull()) {
                     SOCIALD_LOG_DEBUG("Ignoring null incidence returned from deletedIncidences()");
                     continue;
@@ -1719,7 +1702,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 // also discard the event from the locally added list if it is reported there.
                 // this can happen due to cleansync, or the overlap in the sync date due to mkcal resolution issue.
                 for (int i = 0; i < addedList.size(); ++i) {
-                    KCalCore::Incidence::Ptr addedEvent = addedList[i];
+                    KCalendarCore::Incidence::Ptr addedEvent = addedList[i];
                     if (addedEvent.isNull()) {
                         SOCIALD_LOG_DEBUG("Disregarding local event addition due to null state");
                         continue;
@@ -1748,7 +1731,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 // also discard the event from the locally added list if it is reported there.
                 // this can happen due to cleansync, or the overlap in the sync date due to mkcal resolution issue.
                 for (int i = 0; i < addedList.size(); ++i) {
-                    KCalCore::Incidence::Ptr addedEvent = addedList[i];
+                    KCalendarCore::Incidence::Ptr addedEvent = addedList[i];
                     if (addedEvent.isNull()) {
                         SOCIALD_LOG_DEBUG("Disregarding local event addition due to null state");
                         continue;
@@ -1783,7 +1766,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
             discardedRemoteModifications++;
         } else if (allMap.contains(eventId)) {
             // remote modification of an existing event.
-            KCalCore::Event::Ptr event = allMap.value(eventId);
+            KCalendarCore::Event::Ptr event = allMap.value(eventId);
             bool changed = false;
             if (partialUpsyncArtifactsNeedingUpdate.contains(eventId)) {
                 // This event was partially upsynced and then connectivity died before we committed
@@ -1822,7 +1805,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                 // also discard the event from the locally added list if it is reported there.
                 // this can happen due to cleansync, or the overlap in the sync date due to mkcal resolution issue.
                 for (int i = 0; i < addedList.size(); ++i) {
-                    KCalCore::Incidence::Ptr addedEvent = addedList[i];
+                    KCalendarCore::Incidence::Ptr addedEvent = addedList[i];
                     if (addedEvent.isNull()) {
                         SOCIALD_LOG_DEBUG("Disregarding local event addition due to null state");
                         continue;
@@ -1859,7 +1842,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
         // first, queue up deletions.
         Q_FOREACH (const QString &deletedGcalId, deletedMap.keys()) {
             QString incidenceUid = deletedMap.value(deletedGcalId).first;
-            KDateTime recurrenceId = deletedMap.value(deletedGcalId).second;
+            QDateTime recurrenceId = deletedMap.value(deletedGcalId).second;
             localRemoved++;
             SOCIALD_LOG_TRACE("queueing upsync deletion for gcal id:" << deletedGcalId);
             UpsyncChange deletion;
@@ -1874,7 +1857,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
 
         // second, queue up modifications.
         Q_FOREACH (const QString &updatedGcalId, updatedMap.keys()) {
-            KCalCore::Event::Ptr event = updatedMap.value(updatedGcalId);
+            KCalendarCore::Event::Ptr event = updatedMap.value(updatedGcalId);
             if (event) {
                 QJsonObject localEventData = kCalToJson(event, m_icalFormat);
                 if (unchangedRemoteModifications.contains(updatedGcalId)
@@ -1904,8 +1887,8 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
         }
 
         // finally, queue up insertions.
-        Q_FOREACH (KCalCore::Incidence::Ptr incidence, addedList) {
-            KCalCore::Event::Ptr event = m_calendar->event(incidence->uid(), incidence->recurrenceId());
+        Q_FOREACH (KCalendarCore::Incidence::Ptr incidence, addedList) {
+            KCalendarCore::Event::Ptr event = m_calendar->event(incidence->uid(), incidence->recurrenceId());
             if (event) {
                 if (upsyncedUidMapping.contains(incidence->uid())) {
                     const QString &eventId(upsyncedUidMapping.value(incidence->uid()));
@@ -1929,9 +1912,9 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                     } else {
                         // this event was previously downsynced from the remote in the last sync cycle.
                         // check to see whether it has changed locally since we downsynced it.
-                        if (event->lastModified().dateTime() < since) {
+                        if (event->lastModified() < since) {
                             SOCIALD_LOG_DEBUG("Discarding local event addition:" << event->uid() << event->recurrenceId().toString() << "as spurious due to downsync, for gcalId:" << gcalId);
-                            SOCIALD_LOG_DEBUG("Last modified:" << event->lastModified().dateTime() << "<" << since);
+                            SOCIALD_LOG_DEBUG("Last modified:" << event->lastModified() << "<" << since);
                             discardedLocalModifications++;
                             continue;
                         }
@@ -1998,7 +1981,7 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
 
 void GoogleCalendarSyncAdaptor::upsyncChanges(const QString &accessToken,
                                               GoogleCalendarSyncAdaptor::ChangeType upsyncType,
-                                              const QString &kcalEventId, const KDateTime &recurrenceId,
+                                              const QString &kcalEventId, const QDateTime &recurrenceId,
                                               const QString &calendarId, const QString &eventId,
                                               const QByteArray &eventData)
 {
@@ -2071,7 +2054,7 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
     QString kcalEventId = reply->property("kcalEventId").toString();
-    KDateTime recurrenceId = KDateTime::fromString(reply->property("recurrenceId").toString());
+    QDateTime recurrenceId = QDateTime::fromString(reply->property("recurrenceId").toString(), Qt::ISODate);
     QString calendarId = reply->property("calendarId").toString();
     int upsyncType = reply->property("upsyncType").toInt();
     QByteArray replyData = reply->readAll();
@@ -2114,7 +2097,7 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
         // the only exception is if there's an error, in which case this should have been
         // picked up by the "isError" clause.
         if (replyData.isEmpty()) {
-            KCalCore::Incidence::Ptr incidence = m_deletedGcalIdToIncidence.value(eventId);
+            KCalendarCore::Incidence::Ptr incidence = m_deletedGcalIdToIncidence.value(eventId);
             SOCIALD_LOG_TRACE("Deletion confirmed, purging event: " << kcalEventId);
             m_purgeList += incidence;
         } else {
@@ -2145,14 +2128,14 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
             } else {
                 // cache the update to this event in the local calendar
                 m_storage->loadNotebookIncidences(googleNotebook->uid());
-                KCalCore::Event::Ptr event = m_calendar->event(kcalEventId, recurrenceId);
+                KCalendarCore::Event::Ptr event = m_calendar->event(kcalEventId, recurrenceId);
                 if (!event) {
                     SOCIALD_LOG_ERROR("event" << kcalEventId << recurrenceId.toString() << "was deleted locally during sync of Google account with id" << m_accountId);
                     m_syncSucceeded = false;
                 } else {
                     SOCIALD_LOG_TRACE("Local upsync response json:");
                     traceDumpStr(QString::fromUtf8(replyData));
-                    m_changesFromUpsync.insertMulti(calendarId, qMakePair<KCalCore::Event::Ptr,QJsonObject>(event, parsed));
+                    m_changesFromUpsync.insertMulti(calendarId, qMakePair<KCalendarCore::Event::Ptr,QJsonObject>(event, parsed));
                 }
             }
         }
@@ -2293,7 +2276,7 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally()
 void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString &calendarId)
 {
     QList<QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > changesFromDownsyncForCalendar = m_changesFromDownsync.values(calendarId);
-    QList<QPair<KCalCore::Event::Ptr, QJsonObject> > changesFromUpsyncForCalendar = m_changesFromUpsync.values(calendarId);
+    QList<QPair<KCalendarCore::Event::Ptr, QJsonObject> > changesFromUpsyncForCalendar = m_changesFromUpsync.values(calendarId);
     if (changesFromDownsyncForCalendar.isEmpty() && changesFromUpsyncForCalendar.isEmpty()) {
         SOCIALD_LOG_DEBUG("No remote changes to apply for calendar:" << calendarId << "for Google account:" << m_accountId);
         return; // no remote changes to apply.
@@ -2307,7 +2290,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
         return;
     }
 
-    KCalCore::Incidence::List allLocalEventsList;
+    KCalendarCore::Incidence::List allLocalEventsList;
     m_storage->loadNotebookIncidences(googleNotebook->uid());
     m_storage->allIncidences(&allLocalEventsList, googleNotebook->uid());
 
@@ -2328,12 +2311,12 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
         }
 
         // build up map of gcalIds to local events for this change set
-        QMap<QString, KCalCore::Event::Ptr> allLocalEventsMap;
-        Q_FOREACH(const KCalCore::Incidence::Ptr incidence, allLocalEventsList) {
+        QMap<QString, KCalendarCore::Event::Ptr> allLocalEventsMap;
+        Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, allLocalEventsList) {
             if (incidence.isNull()) {
                 continue;
             }
-            KCalCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
+            KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
             QString gcalId = gCalEventId(incidence);
             if (gcalId.isEmpty()) {
                 gcalId = upsyncedUidMapping.value(incidence->uid());
@@ -2381,7 +2364,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
             const QJsonObject eventData(remoteChange.second);
             const QString eventId = eventData.value(QLatin1String("id")).toVariant().toString();
             QString parentId = eventData.value(QLatin1String("recurringEventId")).toVariant().toString();
-            KDateTime recurrenceId = parseRecurrenceId(eventData.value("originalStartTime").toObject());
+            QDateTime recurrenceId = parseRecurrenceId(eventData.value("originalStartTime").toObject());
             switch (remoteChange.first) {
                 case GoogleCalendarSyncAdaptor::Delete: {
                     // currently existing base event or persistent occurrence which needs deletion
@@ -2391,7 +2374,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                 case GoogleCalendarSyncAdaptor::DeleteOccurrence: {
                     // this is a non-persistent occurrence, we need to add an EXDATE to the base event.
                     SOCIALD_LOG_DEBUG("Occurrence deleted remotely:" << eventId << "for recurrenceId:" << recurrenceId.toString());
-                    KCalCore::Event::Ptr event = allLocalEventsMap.value(parentId);
+                    KCalendarCore::Event::Ptr event = allLocalEventsMap.value(parentId);
                     if (event) {
                         event->startUpdates();
                         event->recurrence()->addExDateTime(recurrenceId);
@@ -2403,30 +2386,30 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                 } break;
                 case GoogleCalendarSyncAdaptor::Modify: {
                     SOCIALD_LOG_DEBUG("Event modified remotely:" << eventId);
-                    KCalCore::Event::Ptr event = allLocalEventsMap.value(eventId);
+                    KCalendarCore::Event::Ptr event = allLocalEventsMap.value(eventId);
                     if (event.isNull()) {
                         SOCIALD_LOG_ERROR("Cannot find modified event:" << eventId << "in local calendar!");
                         m_syncSucceeded = false;
                         continue;
                     }
                     bool changed = false; // modification, not insert, so initially changed = "false".
-                    const QList<KDateTime> exceptions = getExceptionInstanceDates(event);
+                    const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
                     jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed);
                     clampEventTimeToSync(event);
                     SOCIALD_LOG_DEBUG("Modified event with new lastModified time: " << event->lastModified().toString());
                 } break;
                 case GoogleCalendarSyncAdaptor::Insert: {
                     // add a new local event for the remote addition.
-                    const KDateTime currDateTime = KDateTime::currentUtcDateTime();
-                    KCalCore::Event::Ptr event;
+                    const QDateTime currDateTime = QDateTime::currentDateTimeUtc();
+                    KCalendarCore::Event::Ptr event;
                     if (recurrenceId.isValid()) {
                         // this is a persistent occurrence for an already-existing series.
                         SOCIALD_LOG_DEBUG("Persistent occurrence added remotely:" << eventId);
-                        KCalCore::Event::Ptr parentEvent = allLocalEventsMap.value(parentId);
+                        KCalendarCore::Event::Ptr parentEvent = allLocalEventsMap.value(parentId);
                         if (parentEvent.isNull()) {
                             // it might have been newly added in this sync cycle.  Look for it from the calendar.
                             QString parentEventUid = m_recurringEventIdToKCalUid.value(parentId);
-                            parentEvent = parentEventUid.isEmpty() ? parentEvent : m_calendar->event(parentEventUid, KDateTime());
+                            parentEvent = parentEventUid.isEmpty() ? parentEvent : m_calendar->event(parentEventUid, QDateTime());
                             if (parentEvent.isNull()) {
                                 SOCIALD_LOG_ERROR("Cannot find parent event:" << parentId << "for persistent occurrence:" << eventId);
                                 m_syncSucceeded = false;
@@ -2436,7 +2419,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
 
                         // dissociate the persistent occurrence
                         SOCIALD_LOG_DEBUG("Dissociating exception from" << parentEvent->uid());
-                        event = m_calendar->dissociateSingleOccurrence(parentEvent, recurrenceId, recurrenceId.timeSpec()).staticCast<KCalCore::Event>();
+                        event = m_calendar->dissociateSingleOccurrence(parentEvent, recurrenceId).staticCast<KCalendarCore::Event>();
 
                         if (event.isNull()) {
                             SOCIALD_LOG_ERROR("Could not dissociate occurrence from recurring event:" << parentId << recurrenceId.toString());
@@ -2447,7 +2430,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                     } else {
                         // this is a new event in its own right.
                         SOCIALD_LOG_DEBUG("Event added remotely:" << eventId);
-                        event = KCalCore::Event::Ptr(new KCalCore::Event);
+                        event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
                         // check to see if another Sailfish OS device uploaded this event.
                         // if so, we want to use the same local UID it did.
                         QString localUid = eventData.value(QLatin1String("extendedProperties")).toObject()
@@ -2462,7 +2445,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                             // uid as mkcal doesn't support a single event being stored in
                             // multiple notebooks.
                             m_storage->load(localUid); // the return value is useless, returns true even if count == 0
-                            KCalCore::Event::Ptr checkLocalUidEvent = m_calendar->event(localUid, KDateTime());
+                            KCalendarCore::Event::Ptr checkLocalUidEvent = m_calendar->event(localUid, QDateTime());
                             if (!checkLocalUidEvent) {
                                 SOCIALD_LOG_DEBUG("Event" << eventId << "was synced by another Sailfish OS device, reusing local uid:" << localUid);
                                 event->setUid(localUid);
@@ -2470,7 +2453,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                         }
                     }
                     bool changed = true; // set to true as it's an addition, no need to check for delta.
-                    const QList<KDateTime> exceptions = getExceptionInstanceDates(event);
+                    const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
                     jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed); // direct conversion
                     clampEventTimeToSync(event);
                     SOCIALD_LOG_DEBUG("Inserted event with new lastModified time: " << event->lastModified().toString());
@@ -2498,12 +2481,12 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
 
     // write changes required to complete upsync to the local database
     for (int i = 0; i < changesFromUpsyncForCalendar.size(); ++i) {
-        const QPair<KCalCore::Event::Ptr, QJsonObject> &remoteChange(changesFromUpsyncForCalendar[i]);
-        KCalCore::Event::Ptr event(remoteChange.first);
+        const QPair<KCalendarCore::Event::Ptr, QJsonObject> &remoteChange(changesFromUpsyncForCalendar[i]);
+        KCalendarCore::Event::Ptr event(remoteChange.first);
         const QJsonObject eventData(remoteChange.second);
         // all changes are modifications to existing events, since it was an upsync response.
         bool changed = false;
-        const QList<KDateTime> exceptions = getExceptionInstanceDates(event);
+        const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
         jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed);
         if (changed) {
             SOCIALD_LOG_DEBUG("Two-way calendar sync with account" << m_accountId << ": re-updating event:" << event->summary());
@@ -2511,7 +2494,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
     }
 }
 
-void GoogleCalendarSyncAdaptor::clampEventTimeToSync(KCalCore::Event::Ptr event) const
+void GoogleCalendarSyncAdaptor::clampEventTimeToSync(KCalendarCore::Event::Ptr event) const
 {
     if (event) {
         // Don't allow the event created time to fall after the sync time
@@ -2525,26 +2508,26 @@ void GoogleCalendarSyncAdaptor::clampEventTimeToSync(KCalCore::Event::Ptr event)
     }
 }
 
-QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalCore::Event::Ptr event, KCalCore::ICalFormat &icalFormat, bool setUidProperty) const
+QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalendarCore::Event::Ptr event, KCalendarCore::ICalFormat &icalFormat, bool setUidProperty) const
 {
     QString eventId = gCalEventId(event);
     QJsonObject start, end, originalStartTime;
     QString recurrenceId;
 
     QJsonArray attendees;
-    const KCalCore::Attendee::List attendeesList = event->attendees();
+    const KCalendarCore::Attendee::List attendeesList = event->attendees();
     if (!attendeesList.isEmpty()) {
-        const QString &organizerEmail = event->organizer()->email();
+        const QString &organizerEmail = event->organizer().email();
         Q_FOREACH (auto att, attendeesList) {
-            if (att->email().isEmpty() || att->email() == organizerEmail) {
+            if (att.email().isEmpty() || att.email() == organizerEmail) {
                 continue;
             }
             QJsonObject attendee;
-            attendee.insert("email", att->email());
-            if (att->role() == KCalCore::Attendee::OptParticipant) {
+            attendee.insert("email", att.email());
+            if (att.role() == KCalendarCore::Attendee::OptParticipant) {
                 attendee.insert("optional", true);
             }
-            const QString &name = att->name();
+            const QString &name = att.name();
             if (!name.isEmpty()) {
                 attendee.insert("displayName", name);
             }
@@ -2553,13 +2536,13 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalCore::Event::Ptr event, KC
     }
     // insert the date/time and timeZone information into the Json object.
     // note that timeZone is required for recurring events, for some reason.
-    if (event->dtStart().isDateOnly() || (event->allDay() && event->dtStart().time() == QTime(0,0,0))) {
+    if (event->dtStart().time().isNull() || (event->allDay() && event->dtStart().time() == QTime(0,0,0))) {
         start.insert(QLatin1String("date"), QLocale::c().toString(event->dtStart().date(), QDATEONLY_FORMAT));
     } else {
         start.insert(QLatin1String("dateTime"), event->dtStart().toString(RFC3339_FORMAT));
         start.insert(QLatin1String("timeZone"), QJsonValue(event->dtStart().toString(KLONGTZ_FORMAT)));
     }
-    if (event->dtEnd().isDateOnly() || (event->allDay() && event->dtEnd().time() == QTime(0,0,0))) {
+    if (event->dtEnd().time().isNull() || (event->allDay() && event->dtEnd().time() == QTime(0,0,0))) {
         // For all day events, the end date is exclusive, so we need to add 1
         end.insert(QLatin1String("date"), QLocale::c().toString(event->dateEnd().addDays(1), QDATEONLY_FORMAT));
     } else {
@@ -2570,7 +2553,7 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalCore::Event::Ptr event, KC
     if (event->hasRecurrenceId()) {
         // Kcal recurrence events share their parent's id, whereas Google gives them their own id
         // and stores the parent's id in the recurrenceId field. So we must find the parent's gCalId
-        KCalCore::Event::Ptr parent = m_calendar->event(event->uid());
+        KCalendarCore::Event::Ptr parent = m_calendar->event(event->uid());
         if (parent) {
             recurrenceId = gCalEventId(parent);
         } else {
@@ -2586,7 +2569,7 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalCore::Event::Ptr event, KC
         retn.insert(QLatin1String("id"), eventId);
     }
     if (event->recurrence()) {
-        const QList<KDateTime> exceptions = getExceptionInstanceDates(event);
+        const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
         QJsonArray recArray = recurrenceArray(event, icalFormat, exceptions);
         if (recArray.size()) {
             retn.insert(QLatin1String("recurrence"), recArray);
@@ -2613,11 +2596,11 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalCore::Event::Ptr event, KC
     QJsonObject reminders;
     if (event->alarms().count()) {
         QJsonArray overrides;
-        KCalCore::Alarm::List alarms = event->alarms();
+        KCalendarCore::Alarm::List alarms = event->alarms();
         for (int i = 0; i < alarms.count(); ++i) {
             // only upsync non-procedure alarms as popup reminders.
             QSet<int> seenMinutes;
-            if (alarms.at(i)->type() != KCalCore::Alarm::Procedure) {
+            if (alarms.at(i)->type() != KCalendarCore::Alarm::Procedure) {
                 const int minutes = (alarms.at(i)->startOffset().asSeconds() / 60) * -1;
                 if (!seenMinutes.contains(minutes)) {
                     QJsonObject override;
