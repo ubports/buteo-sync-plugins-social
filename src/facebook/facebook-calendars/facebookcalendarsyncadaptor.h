@@ -37,8 +37,8 @@ public:
     QString m_id;
     bool m_isDateOnly;
     bool m_endExists;
-    KDateTime m_startTime;
-    KDateTime m_endTime;
+    QDateTime m_startTime;
+    QDateTime m_endTime;
     QString m_summary;
     QString m_description;
     QString m_location;
