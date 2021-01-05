@@ -1,7 +1,7 @@
 /****************************************************************************
  **
- ** Copyright (C) 2013-2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jollamobile.com>
+ ** Copyright (C) 2013 - 2019 Jolla Ltd.
+ ** Copyright (C) 2020 Open Mobile Platform LLC.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -42,15 +42,9 @@
 
 //----------------------------------------------
 
-#define RFC3339_FORMAT      "%Y-%m-%dT%H:%M:%S%:z"
-#define RFC3339_FORMAT_NTZC "%Y-%m-%dT%H:%M:%S%z"
-#define RFC3339_QDATE_FORMAT_MS "yyyy-MM-ddThh:mm:ss.zzzZ"
-#define RFC3339_QDATE_FORMAT_MS_NTZC "yyyy-MM-ddThh:mm:ss.zzz"
-#define KDATEONLY_FORMAT    "%Y-%m-%d"
 #define QDATEONLY_FORMAT    "yyyy-MM-dd"
-#define KLONGTZ_FORMAT      "%:Z"
-#define RFC5545_KDATETIME_FORMAT "%Y%m%dT%H%M%SZ"
-#define RFC5545_KDATETIME_FORMAT_NTZC "%Y%m%dT%H%M%S"
+#define RFC5545_FORMAT "yyyyMMddThhmmssZ"
+#define RFC5545_FORMAT_NTZC "yyyyMMddThhmmss"
 #define RFC5545_QDATE_FORMAT "yyyyMMdd"
 
 namespace {
@@ -213,12 +207,12 @@ QList<QDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
             Q_FOREACH (const QString &dtstr, dts) {
                 if (dtstr.endsWith('Z')) {
                     // UTC
-                    QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT);
+                    QDateTime dt = QDateTime::fromString(dtstr, RFC5545_FORMAT);
                     dt.setTimeSpec(Qt::UTC);
                     retn.append(dt);
                 } else {
                     // Floating time
-                    QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
+                    QDateTime dt = QDateTime::fromString(dtstr, RFC5545_FORMAT_NTZC);
                     dt.setTimeSpec(Qt::LocalTime);
                     retn.append(dt);
                 }
@@ -240,10 +234,10 @@ QList<QDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
             str.remove(0, tzidstr.size()+1);
             QStringList dts = str.split(',');
             Q_FOREACH (const QString &dtstr, dts) {
-                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
+                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_FORMAT_NTZC);
                 if (!dt.isValid()) {
                     // try parsing from alternate formats
-                    dt = QDateTime::fromString(dtstr, RFC3339_FORMAT_NTZC);
+                    dt = QDateTime::fromString(dtstr, Qt::ISODate);
                 }
                 if (!dt.isValid()) {
                     SOCIALD_LOG_ERROR("unable to parse datetime from ex/rdate string:" << exrdatestr);
@@ -266,10 +260,10 @@ QList<QDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
         Q_FOREACH (const QString &dtstr, dts) {
             if (dtstr.endsWith('Z')) {
                 // UTC
-                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT);
+                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_FORMAT);
                 if (!dt.isValid()) {
                     // try parsing from alternate formats
-                    dt = QDateTime::fromString(dtstr, RFC3339_FORMAT);
+                    dt = QDateTime::fromString(dtstr, Qt::ISODate);
                 }
                 if (!dt.isValid()) {
                     SOCIALD_LOG_ERROR("unable to parse datetime from ex/rdate string:" << exrdatestr);
@@ -280,10 +274,10 @@ QList<QDateTime> datetimesFromExRDateStr(const QString &exrdatestr, bool *isDate
                 }
             } else {
                 // Floating time
-                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_KDATETIME_FORMAT_NTZC);
+                QDateTime dt = QDateTime::fromString(dtstr, RFC5545_FORMAT_NTZC);
                 if (!dt.isValid()) {
                     // try parsing from alternate formats
-                    dt = QDateTime::fromString(dtstr, RFC3339_FORMAT_NTZC);
+                    dt = QDateTime::fromString(dtstr, Qt::ISODate);
                 }
                 if (!dt.isValid()) {
                     SOCIALD_LOG_ERROR("unable to parse datetime from ex/rdate string:" << exrdatestr);
@@ -336,9 +330,9 @@ QJsonArray recurrenceArray(KCalendarCore::Event::Ptr event, KCalendarCore::ICalF
     QString rdatetimes;
     Q_FOREACH (const QDateTime &rdatetime, kcalRecurrence->rDateTimes()) {
         if (rdatetime.timeSpec() == Qt::LocalTime) {
-            rdatetimes.append(rdatetime.toString(RFC5545_KDATETIME_FORMAT_NTZC));
+            rdatetimes.append(rdatetime.toString(RFC5545_FORMAT_NTZC));
         } else {
-            rdatetimes.append(rdatetime.toUTC().toString(RFC5545_KDATETIME_FORMAT));
+            rdatetimes.append(rdatetime.toUTC().toString(RFC5545_FORMAT));
         }
         rdatetimes.append(',');
     }
@@ -369,9 +363,9 @@ QJsonArray recurrenceArray(KCalendarCore::Event::Ptr event, KCalendarCore::ICalF
         // So we only include the EXDATE if there's no exception associated with it
         if (!exceptions.contains(exdatetime)) {
             if (exdatetime.timeSpec() == Qt::LocalTime) {
-                exdatetimes.append(exdatetime.toString(RFC5545_KDATETIME_FORMAT_NTZC));
+                exdatetimes.append(exdatetime.toString(RFC5545_FORMAT_NTZC));
             } else {
-                exdatetimes.append(exdatetime.toUTC().toString(RFC5545_KDATETIME_FORMAT));
+                exdatetimes.append(exdatetime.toUTC().toString(RFC5545_FORMAT));
             }
             exdatetimes.append(',');
         }
@@ -388,7 +382,7 @@ QDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
 {
     QString recurrenceIdStr = originalStartTime.value(QLatin1String("dateTime")).toVariant().toString();
     QString recurrenceIdTzStr = originalStartTime.value(QLatin1String("timeZone")).toVariant().toString();
-    QDateTime recurrenceId = QDateTime::fromString(recurrenceIdStr, RFC3339_FORMAT);
+    QDateTime recurrenceId = QDateTime::fromString(recurrenceIdStr, Qt::ISODate);
     if (!recurrenceIdTzStr.isEmpty()) {
         recurrenceId = recurrenceId.toTimeZone(QTimeZone(recurrenceIdTzStr.toLatin1()));
     }
@@ -397,12 +391,7 @@ QDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
 
 QDateTime parseDateTimeString(const QString &dateTimeStr)
 {
-    QDateTime parsedTime = QDateTime::fromString(dateTimeStr, RFC3339_FORMAT);
-    QDateTime ntzcTime = QDateTime::fromString(dateTimeStr, RFC3339_FORMAT_NTZC);
-
-    if (ntzcTime.time() > parsedTime.time()) {
-        parsedTime = ntzcTime;
-    }
+    QDateTime parsedTime = QDateTime::fromString(dateTimeStr, Qt::ISODate);
 
     if (parsedTime.isNull()) {
         qWarning() << "Unable to parse date time from string:" << dateTimeStr;
@@ -534,11 +523,11 @@ void extractRecurrence(const QJsonArray &recurrence, KCalendarCore::Event::Ptr e
                 SOCIALD_LOG_DEBUG("unable to parse RDATE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
             } else {
-                Q_FOREACH (const QDateTime &kdt, rdatetimes) {
+                Q_FOREACH (const QDateTime &dt, rdatetimes) {
                     if (isDateOnly) {
-                        kcalRecurrence->addRDate(kdt.date());
+                        kcalRecurrence->addRDate(dt.date());
                     } else {
-                        kcalRecurrence->addRDateTime(kdt);
+                        kcalRecurrence->addRDateTime(dt);
                     }
                 }
             }
@@ -549,11 +538,11 @@ void extractRecurrence(const QJsonArray &recurrence, KCalendarCore::Event::Ptr e
                 SOCIALD_LOG_DEBUG("unable to parse EXDATE information:" << ruleStr);
                 traceDumpStr(QString::fromUtf8(QJsonDocument(recurrence).toJson()));
             } else {
-                Q_FOREACH (const QDateTime &kdt, exdatetimes) {
+                Q_FOREACH (const QDateTime &dt, exdatetimes) {
                     if (isDateOnly) {
-                        kcalRecurrence->addExDate(kdt.date());
+                        kcalRecurrence->addExDate(dt.date());
                     } else {
-                        kcalRecurrence->addExDateTime(kdt);
+                        kcalRecurrence->addExDateTime(dt);
                     }
                 }
             }
@@ -2539,15 +2528,15 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalendarCore::Event::Ptr even
     if (event->dtStart().time().isNull() || (event->allDay() && event->dtStart().time() == QTime(0,0,0))) {
         start.insert(QLatin1String("date"), QLocale::c().toString(event->dtStart().date(), QDATEONLY_FORMAT));
     } else {
-        start.insert(QLatin1String("dateTime"), event->dtStart().toString(RFC3339_FORMAT));
-        start.insert(QLatin1String("timeZone"), QJsonValue(event->dtStart().toString(KLONGTZ_FORMAT)));
+        start.insert(QLatin1String("dateTime"), event->dtStart().toString(Qt::ISODate));
+        start.insert(QLatin1String("timeZone"), QJsonValue(QString::fromUtf8(event->dtStart().timeZone().id())));
     }
     if (event->dtEnd().time().isNull() || (event->allDay() && event->dtEnd().time() == QTime(0,0,0))) {
         // For all day events, the end date is exclusive, so we need to add 1
         end.insert(QLatin1String("date"), QLocale::c().toString(event->dateEnd().addDays(1), QDATEONLY_FORMAT));
     } else {
-        end.insert(QLatin1String("dateTime"), event->dtEnd().toString(RFC3339_FORMAT));
-        end.insert(QLatin1String("timeZone"), QJsonValue(event->dtEnd().toString(KLONGTZ_FORMAT)));
+        end.insert(QLatin1String("dateTime"), event->dtEnd().toString(Qt::ISODate));
+        end.insert(QLatin1String("timeZone"), QJsonValue(QString::fromUtf8(event->dtEnd().timeZone().id())));
     }
 
     if (event->hasRecurrenceId()) {
@@ -2560,8 +2549,8 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalendarCore::Event::Ptr even
             recurrenceId = eventId.contains('_') ? eventId.left(eventId.indexOf("_")) : eventId;
             SOCIALD_LOG_DEBUG("Guessing recurrence gCalId" << recurrenceId << "from gCalId" << eventId);
         }
-        originalStartTime.insert(QLatin1String("dateTime"), event->recurrenceId().toString(RFC3339_FORMAT));
-        originalStartTime.insert(QLatin1String("timeZone"), QJsonValue(event->recurrenceId().toString(KLONGTZ_FORMAT)));
+        originalStartTime.insert(QLatin1String("dateTime"), event->recurrenceId().toString(Qt::ISODate));
+        originalStartTime.insert(QLatin1String("timeZone"), QJsonValue(QString::fromUtf8(event->recurrenceId().timeZone().id())));
     }
 
     QJsonObject retn;
