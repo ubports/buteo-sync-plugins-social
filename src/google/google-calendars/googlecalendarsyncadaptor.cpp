@@ -2014,7 +2014,7 @@ void GoogleCalendarSyncAdaptor::upsyncChanges(const QString &accessToken,
         reply->setProperty("accountId", m_accountId);
         reply->setProperty("accessToken", accessToken);
         reply->setProperty("kcalEventId", kcalEventId);
-        reply->setProperty("recurrenceId", recurrenceId.toString());
+        reply->setProperty("recurrenceId", recurrenceId);
         reply->setProperty("calendarId", calendarId);
         reply->setProperty("eventId", eventId);
         reply->setProperty("upsyncType", static_cast<int>(upsyncType));
@@ -2043,7 +2043,7 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
     QString kcalEventId = reply->property("kcalEventId").toString();
-    QDateTime recurrenceId = QDateTime::fromString(reply->property("recurrenceId").toString(), Qt::ISODate);
+    QDateTime recurrenceId = reply->property("recurrenceId").toDateTime();
     QString calendarId = reply->property("calendarId").toString();
     int upsyncType = reply->property("upsyncType").toInt();
     QByteArray replyData = reply->readAll();
