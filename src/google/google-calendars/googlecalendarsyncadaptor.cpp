@@ -822,13 +822,11 @@ bool wasLastSyncSuccessful(int accountId, bool *needCleanSync)
     *needCleanSync = settingsFile.value(QString::fromLatin1("%1-needCleanSync").arg(accountId), QVariant::fromValue<bool>(false)).toBool();
     bool retn = settingsFile.value(QString::fromLatin1("%1-success").arg(accountId), QVariant::fromValue<bool>(false)).toBool();
     settingsFile.setValue(QString::fromLatin1("%1-success").arg(accountId), QVariant::fromValue<bool>(false));
-    int pluginVersion = settingsFile.value(QString::fromLatin1("%1-pluginVersion").arg(accountId), QVariant::fromValue<int>(1)).toInt();
+    int pluginVersion = settingsFile.value(QString::fromLatin1("%1-pluginVersion").arg(accountId), QVariant::fromValue<int>(GOOGLE_CAL_SYNC_PLUGIN_VERSION)).toInt();
     if (pluginVersion != GOOGLE_CAL_SYNC_PLUGIN_VERSION) {
-        settingsFile.setValue(QString::fromLatin1("%1-pluginVersion").arg(accountId), GOOGLE_CAL_SYNC_PLUGIN_VERSION);
         SOCIALD_LOG_DEBUG("Google cal sync plugin version mismatch, force clean sync");
         retn = false;
     }
-    settingsFile.sync();
     return retn;
 }
 
@@ -840,7 +838,7 @@ void setLastSyncSuccessful(int accountId)
     QSettings settingsFile(settingsFileName, QSettings::IniFormat);
     settingsFile.setValue(QString::fromLatin1("%1-needCleanSync").arg(accountId), QVariant::fromValue<bool>(false));
     settingsFile.setValue(QString::fromLatin1("%1-success").arg(accountId), QVariant::fromValue<bool>(true));
-    settingsFile.sync();
+    settingsFile.setValue(QString::fromLatin1("%1-pluginVersion").arg(accountId), GOOGLE_CAL_SYNC_PLUGIN_VERSION);
 }
 
 // Move all items with a recurrenceId after those without
