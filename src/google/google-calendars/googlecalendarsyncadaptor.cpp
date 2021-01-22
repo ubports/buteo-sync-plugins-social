@@ -54,6 +54,7 @@ const QByteArray NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY = QByteArrayLiteral("syncTo
 const QByteArray NOTEBOOK_SERVER_ID_PROPERTY = QByteArrayLiteral("calendarServerId");
 const QByteArray NOTEBOOK_EMAIL_PROPERTY = QByteArrayLiteral("userPrincipalEmail");
 const int COLLISION_ERROR_MAX_CONSECUTIVE = 8;
+const QString ERROR_REASON_NON_ORGANIZER = QStringLiteral("forbiddenForNonOrganizer");
 
 void errorDumpStr(const QString &str)
 {
@@ -907,6 +908,26 @@ QByteArray jsonReplaceValue(const QByteArray &json, const QString &key, const QJ
     return QJsonDocument(object).toJson();
 }
 
+struct ErrorDetails {
+    QString reason;
+    QString message;
+};
+
+QString getErrorReason(const QByteArray &replyData)
+{
+    QString reason;
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(replyData, &error);
+    if (error.error == QJsonParseError::NoError) {
+        QJsonObject object = doc.object().value(QStringLiteral("error")).toObject();;
+        reason = object.value(QStringLiteral("errors")).toArray().first().toObject().value(QStringLiteral("reason")).toString();
+    } else {
+        SOCIALD_LOG_DEBUG("Json parse error:" << error.errorString());
+    }
+
+    return reason;
+}
+
 }
 
 GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
@@ -1452,6 +1473,7 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
 
         // Parse the event list
         const QJsonArray dataList = parsed.value(QLatin1String("items")).toArray();
+
         foreach (const QJsonValue &item, dataList) {
             QJsonObject eventData = item.toObject();
 
@@ -2204,20 +2226,28 @@ void GoogleCalendarSyncAdaptor::handleErrorReply(QNetworkReply *reply)
     SOCIALD_LOG_ERROR("error: calendarId:" << reply->property("calendarId").toString());
     SOCIALD_LOG_ERROR("error: eventId:" << reply->property("eventId").toString());
     SOCIALD_LOG_ERROR("error: summary:" << reply->property("summary").toString());
-    SOCIALD_LOG_ERROR("error" << httpCode << "occurred while upsyncing calendar data to Google account" << m_accountId << "; got:");
+    SOCIALD_LOG_ERROR("error" << httpCode << "occurred upsyncing Google account" << m_accountId << "; got:");
     errorDumpStr(QString::fromUtf8(replyData));
 
-    // If we get a ContentOperationNotPermittedError, then allow the sync cycle to succeed.
-    // Most likely, it's an attempt to modify a shared event, and Google prevents
-    // any user other than the original creator of the event from modifying those.
-    // Such errors should not prevent the rest of the sync cycle from succeeding.
-    // TODO: is there some way to detect whether I am the organizer/owner of the event?
     if (reply->error() == QNetworkReply::ContentOperationNotPermittedError) {
-        SOCIALD_LOG_TRACE("Ignoring 403 due to shared calendar resource");
+        const QString reason = getErrorReason(replyData);
+        if (reason == ERROR_REASON_NON_ORGANIZER) {
+            // This is an attempt to modify a shared event, and Google prevents
+            // any user other than the original creator of the event from modifying those.
+            // Such errors should not prevent the rest of the sync cycle from succeeding.
+            SOCIALD_LOG_TRACE("Ignoring 403 due to shared calendar resource");
+        } else {
+            SOCIALD_LOG_ERROR("Usage limit reached. Please try syncing again later.");
+            m_syncSucceeded = false;
+        }
     } else if (httpCode == 410) {
         // HTTP 410 GONE "deleted"
         // The event was already deleted on the server, so continue as normal
         SOCIALD_LOG_TRACE("Event already deleted on the server, so we're now in sync");
+    } else if ((httpCode == 404) && (upsyncType == ChangeType::Delete)) {
+        // HTTP 404 NOT FOUND on deletion
+        // The event doesn't now exist on client or server, so continue as normal
+        SOCIALD_LOG_TRACE("Event deleted doesn't exist on the server, so we're now in sync");
     } else if (httpCode == 409) {
         // HTTP 409 CONFLICT "The requested identifier already exists"
         // This should be a super-rare occurrence
@@ -2612,7 +2642,6 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                 } break;
                 case GoogleCalendarSyncAdaptor::Insert: {
                     // add a new local event for the remote addition.
-                    const QDateTime currDateTime = QDateTime::currentDateTimeUtc();
                     KCalendarCore::Event::Ptr event;
                     if (recurrenceId.isValid()) {
                         // this is a persistent occurrence for an already-existing series.
@@ -2668,7 +2697,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                     const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
                     jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed); // direct conversion
                     clampEventTimeToSync(event);
-                    SOCIALD_LOG_DEBUG("Inserted event with new lastModified time: " << event->lastModified().toString());
+                    SOCIALD_LOG_DEBUG("Inserting event with new lastModified time: " << event->lastModified().toString());
 
                     if (!m_calendar->addEvent(event, googleNotebook->uid())) {
                         SOCIALD_LOG_ERROR("Could not add dissociated occurrence to calendar:" << parentId << recurrenceId.toString());
