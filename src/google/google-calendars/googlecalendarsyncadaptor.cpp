@@ -928,6 +928,46 @@ QString getErrorReason(const QByteArray &replyData)
     return reason;
 }
 
+KCalendarCore::Event::Ptr dissociateSingleOccurrence(const KCalendarCore::Event::Ptr &event, const QDateTime &dateTime)
+{
+    const QDateTime modified = event->lastModified();
+
+    // Create a new incidence
+    KCalendarCore::Event::Ptr newEvent = KCalendarCore::Event::Ptr(event->clone());
+    newEvent->setCreated(QDateTime::currentDateTimeUtc());
+    newEvent->setSchedulingID(QString());
+    if (newEvent->recurs()) {
+        newEvent->clearRecurrence();
+    }
+
+    // Add a recurrence rule to the parent if it needs it
+    // Add an ex-date to the parent for the dissociation
+    if (event->allDay()) {
+        if (!event->recursOn(dateTime.date(), dateTime.timeZone())) {
+            event->recurrence()->addRDate(dateTime.date());
+        }
+        event->recurrence()->addExDate(dateTime.date());
+    } else {
+        if (!event->recursAt(dateTime)) {
+            event->recurrence()->addRDateTime(dateTime);
+        }
+        event->recurrence()->addExDateTime(dateTime);
+    }
+
+    // Set the recurrenceId for the new incidence
+    // Don't save milliseconds
+    QDateTime recId(dateTime);
+    recId.setTime(QTime(recId.time().hour(),
+                        recId.time().minute(),
+                        recId.time().second()));
+    newEvent->setRecurrenceId(recId);
+
+    // Don't update the modification date of the parent
+    event->setLastModified(modified);
+
+    return newEvent;
+}
+
 }
 
 GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
@@ -2515,6 +2555,182 @@ void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally()
     }
 }
 
+KCalendarCore::Event::Ptr GoogleCalendarSyncAdaptor::addDummyParent(const QJsonObject &eventData,
+                                                                    const QString &parentId,
+                                                                    const mKCal::Notebook::Ptr googleNotebook)
+{
+    if (!googleNotebook) {
+        SOCIALD_LOG_ERROR("No google Notebook for calendar inserting:" << parentId);
+        return KCalendarCore::Event::Ptr();
+    }
+
+    KCalendarCore::Event::Ptr parentEvent = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
+    bool changed = true;
+    const QList<QDateTime> emptyExceptions;
+    jsonToKCal(eventData, parentEvent, 0, m_icalFormat, emptyExceptions, &changed);
+    // Clear the recurrence rule, to avoid issues when one gets added during dissociation
+    parentEvent->clearRecurrence();
+
+    clampEventTimeToSync(parentEvent);
+    SOCIALD_LOG_DEBUG("Inserting parent event with new lastModified time: " << parentEvent->lastModified().toString());
+    setGCalEventId(parentEvent, parentId);
+
+    if (!m_calendar->addEvent(parentEvent, googleNotebook->uid())) {
+        SOCIALD_LOG_ERROR("Could not add parent occurrence to calendar:" << parentId);
+        return KCalendarCore::Event::Ptr();
+    }
+
+    return parentEvent;
+}
+
+bool GoogleCalendarSyncAdaptor::applyRemoteDelete(const QString &eventId,
+                                                  QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap)
+{
+    SOCIALD_LOG_DEBUG("Event deleted remotely:" << eventId);
+    m_calendar->deleteEvent(allLocalEventsMap.value(eventId));
+    return true;
+}
+
+bool GoogleCalendarSyncAdaptor::applyRemoteDeleteOccurence(const QString &eventId,
+                                const QJsonObject &eventData,
+                                QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap)
+{
+    const QString parentId = eventData.value(QLatin1String("recurringEventId")).toVariant().toString();
+    const QDateTime recurrenceId = parseRecurrenceId(eventData.value("originalStartTime").toObject());
+
+    SOCIALD_LOG_DEBUG("Occurrence deleted remotely:" << eventId << "for recurrenceId:" << recurrenceId.toString());
+    KCalendarCore::Event::Ptr event = allLocalEventsMap.value(parentId);
+    if (event) {
+        event->startUpdates();
+        event->recurrence()->addExDateTime(recurrenceId);
+        event->endUpdates();
+    } else {
+        // The parent event should never be null by this point, but we guard against it just in case
+        SOCIALD_LOG_ERROR("Deletion failed as the parent event" << parentId << "couldn't be found");
+    }
+    return true;
+}
+
+bool GoogleCalendarSyncAdaptor::applyRemoteModify(const QString &eventId,
+                                                  const QJsonObject &eventData,
+                                                  const QString &calendarId,
+                                                  QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap)
+{
+    SOCIALD_LOG_DEBUG("Event modified remotely:" << eventId);
+    KCalendarCore::Event::Ptr event = allLocalEventsMap.value(eventId);
+    if (event.isNull()) {
+        SOCIALD_LOG_ERROR("Cannot find modified event:" << eventId << "in local calendar!");
+        return false;
+    }
+    bool changed = false; // modification, not insert, so initially changed = "false".
+    const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
+    jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed);
+    clampEventTimeToSync(event);
+    SOCIALD_LOG_DEBUG("Modified event with new lastModified time: " << event->lastModified().toString());
+
+    return true;
+}
+
+bool GoogleCalendarSyncAdaptor::applyRemoteInsert(const QString &eventId,
+                                                  const QJsonObject &eventData,
+                                                  const QString &calendarId,
+                                                  const QHash<QString, QString> &upsyncedUidMapping,
+                                                  QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap)
+{
+    QDateTime recurrenceId = parseRecurrenceId(eventData.value("originalStartTime").toObject());
+    QString parentId = eventData.value(QLatin1String("recurringEventId")).toVariant().toString();
+    mKCal::Notebook::Ptr googleNotebook = notebookForCalendarId(calendarId);
+
+    if (!googleNotebook) {
+        SOCIALD_LOG_ERROR("No google Notebook for calendar:" << calendarId);
+        return false;
+    }
+
+    KCalendarCore::Event::Ptr event;
+    if (recurrenceId.isValid()) {
+        // this is a persistent occurrence for an already-existing series.
+        SOCIALD_LOG_DEBUG("Persistent occurrence added remotely:" << eventId);
+        KCalendarCore::Event::Ptr parentEvent = allLocalEventsMap.value(parentId);
+        if (parentEvent.isNull()) {
+            // it might have been newly added in this sync cycle.  Look for it from the calendar.
+            QString parentEventUid = m_recurringEventIdToKCalUid.value(parentId);
+            parentEvent = parentEventUid.isEmpty() ? parentEvent : m_calendar->event(parentEventUid, QDateTime());
+        }
+
+        if (parentEvent.isNull()) {
+            // construct a recurring parent series for this orphan
+            SOCIALD_LOG_INFO("Creating parent:" << parentId << "for orphaned event:" << eventId);
+
+            parentEvent = addDummyParent(eventData, parentId, googleNotebook);
+            if (!parentEvent) {
+                return false;
+            }
+
+            m_recurringEventIdToKCalUid.insert(parentId, parentEvent->uid());
+
+            // Add to the local events map, in case there are future modifications in the same sync
+            if (parentId.size()) {
+                allLocalEventsMap.insert(parentId, parentEvent);
+            }
+        }
+
+        // dissociate the persistent occurrence
+        SOCIALD_LOG_DEBUG("Dissociating exception from" << parentEvent->uid());
+        event = dissociateSingleOccurrence(parentEvent, recurrenceId);
+
+        if (event.isNull()) {
+            SOCIALD_LOG_ERROR("Could not dissociate occurrence from recurring event:" << parentId << recurrenceId.toString());
+            return false;
+        }
+    } else {
+        // this is a new event in its own right.
+        SOCIALD_LOG_DEBUG("Event added remotely:" << eventId);
+        event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
+        // check to see if another Sailfish OS device uploaded this event.
+        // if so, we want to use the same local UID it did.
+        QString localUid = eventData.value(QLatin1String("extendedProperties")).toObject()
+                                    .value(QLatin1String("private")).toObject()
+                                    .value("x-jolla-sociald-mkcal-uid").toVariant().toString();
+        if (localUid.size()) {
+            // either this event was uploaded by a different Sailfish OS device,
+            // in which case we should re-use the uid it used;
+            // or it was uploaded by this device from a different notebook,
+            // and then the event was copied to a different calendar via
+            // the Google web UI - in which case we need to use a different
+            // uid as mkcal doesn't support a single event being stored in
+            // multiple notebooks.
+            m_storage->load(localUid); // the return value is useless, returns true even if count == 0
+            KCalendarCore::Event::Ptr checkLocalUidEvent = m_calendar->event(localUid, QDateTime());
+            if (!checkLocalUidEvent) {
+                SOCIALD_LOG_DEBUG("Event" << eventId << "was synced by another Sailfish OS device, reusing local uid:" << localUid);
+                event->setUid(localUid);
+            }
+        }
+    }
+    bool changed = true; // set to true as it's an addition, no need to check for delta.
+    const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
+    jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed); // direct conversion
+    clampEventTimeToSync(event);
+    SOCIALD_LOG_DEBUG("Inserting event with new lastModified time: " << event->lastModified().toString());
+
+    if (!m_calendar->addEvent(event, googleNotebook->uid())) {
+        SOCIALD_LOG_ERROR("Could not add dissociated occurrence to calendar:" << parentId << recurrenceId.toString());
+        return false;
+    }
+    m_recurringEventIdToKCalUid.insert(eventId, event->uid());
+
+    // Add to the local events map, in case there are future modifications in the same sync
+    QString gcalId = gCalEventId(event);
+    if (gcalId.isEmpty()) {
+        gcalId = upsyncedUidMapping.value(event->uid());
+    }
+    if (gcalId.size() && event) {
+        allLocalEventsMap.insert(gcalId, event);
+    }
+
+    return true;
+}
+
 void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString &calendarId)
 {
     QList<QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> > changesFromDownsyncForCalendar = m_changesFromDownsync.values(calendarId);
@@ -2605,118 +2821,28 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
             const QPair<GoogleCalendarSyncAdaptor::ChangeType, QJsonObject> &remoteChange(reorderedChangesFromDownsyncForCalendar[i]);
             const QJsonObject eventData(remoteChange.second);
             const QString eventId = eventData.value(QLatin1String("id")).toVariant().toString();
-            QString parentId = eventData.value(QLatin1String("recurringEventId")).toVariant().toString();
-            QDateTime recurrenceId = parseRecurrenceId(eventData.value("originalStartTime").toObject());
+            bool success = true;
             switch (remoteChange.first) {
                 case GoogleCalendarSyncAdaptor::Delete: {
                     // currently existing base event or persistent occurrence which needs deletion
-                    SOCIALD_LOG_DEBUG("Event deleted remotely:" << eventId);
-                    m_calendar->deleteEvent(allLocalEventsMap.value(eventId));
+                    success = applyRemoteDelete(eventId, allLocalEventsMap);
                 } break;
                 case GoogleCalendarSyncAdaptor::DeleteOccurrence: {
                     // this is a non-persistent occurrence, we need to add an EXDATE to the base event.
-                    SOCIALD_LOG_DEBUG("Occurrence deleted remotely:" << eventId << "for recurrenceId:" << recurrenceId.toString());
-                    KCalendarCore::Event::Ptr event = allLocalEventsMap.value(parentId);
-                    if (event) {
-                        event->startUpdates();
-                        event->recurrence()->addExDateTime(recurrenceId);
-                        event->endUpdates();
-                    } else {
-                        // The parent event should never be null by this point, but we guard against it just in case
-                        SOCIALD_LOG_ERROR("Deletion failed as the parent event" << parentId << "couldn't be found");
-                    }
+                    success = applyRemoteDeleteOccurence(eventId, eventData, allLocalEventsMap);
                 } break;
                 case GoogleCalendarSyncAdaptor::Modify: {
-                    SOCIALD_LOG_DEBUG("Event modified remotely:" << eventId);
-                    KCalendarCore::Event::Ptr event = allLocalEventsMap.value(eventId);
-                    if (event.isNull()) {
-                        SOCIALD_LOG_ERROR("Cannot find modified event:" << eventId << "in local calendar!");
-                        m_syncSucceeded = false;
-                        continue;
-                    }
-                    bool changed = false; // modification, not insert, so initially changed = "false".
-                    const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
-                    jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed);
-                    clampEventTimeToSync(event);
-                    SOCIALD_LOG_DEBUG("Modified event with new lastModified time: " << event->lastModified().toString());
+                    // An existing event was modified remotely
+                    success = applyRemoteModify(eventId, eventData, calendarId, allLocalEventsMap);
                 } break;
                 case GoogleCalendarSyncAdaptor::Insert: {
                     // add a new local event for the remote addition.
-                    KCalendarCore::Event::Ptr event;
-                    if (recurrenceId.isValid()) {
-                        // this is a persistent occurrence for an already-existing series.
-                        SOCIALD_LOG_DEBUG("Persistent occurrence added remotely:" << eventId);
-                        KCalendarCore::Event::Ptr parentEvent = allLocalEventsMap.value(parentId);
-                        if (parentEvent.isNull()) {
-                            // it might have been newly added in this sync cycle.  Look for it from the calendar.
-                            QString parentEventUid = m_recurringEventIdToKCalUid.value(parentId);
-                            parentEvent = parentEventUid.isEmpty() ? parentEvent : m_calendar->event(parentEventUid, QDateTime());
-                            if (parentEvent.isNull()) {
-                                SOCIALD_LOG_ERROR("Cannot find parent event:" << parentId << "for persistent occurrence:" << eventId);
-                                m_syncSucceeded = false;
-                                continue; // we don't return, but instead attempt to finish other event modifications
-                            }
-                        }
-
-                        // dissociate the persistent occurrence
-                        SOCIALD_LOG_DEBUG("Dissociating exception from" << parentEvent->uid());
-                        event = m_calendar->dissociateSingleOccurrence(parentEvent, recurrenceId).staticCast<KCalendarCore::Event>();
-
-                        if (event.isNull()) {
-                            SOCIALD_LOG_ERROR("Could not dissociate occurrence from recurring event:" << parentId << recurrenceId.toString());
-
-                            m_syncSucceeded = false;
-                            continue; // we don't return, but instead attempt to finish other event modifications
-                        }
-                    } else {
-                        // this is a new event in its own right.
-                        SOCIALD_LOG_DEBUG("Event added remotely:" << eventId);
-                        event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
-                        // check to see if another Sailfish OS device uploaded this event.
-                        // if so, we want to use the same local UID it did.
-                        QString localUid = eventData.value(QLatin1String("extendedProperties")).toObject()
-                                                    .value(QLatin1String("private")).toObject()
-                                                    .value("x-jolla-sociald-mkcal-uid").toVariant().toString();
-                        if (localUid.size()) {
-                            // either this event was uploaded by a different Sailfish OS device,
-                            // in which case we should re-use the uid it used;
-                            // or it was uploaded by this device from a different notebook,
-                            // and then the event was copied to a different calendar via
-                            // the Google web UI - in which case we need to use a different
-                            // uid as mkcal doesn't support a single event being stored in
-                            // multiple notebooks.
-                            m_storage->load(localUid); // the return value is useless, returns true even if count == 0
-                            KCalendarCore::Event::Ptr checkLocalUidEvent = m_calendar->event(localUid, QDateTime());
-                            if (!checkLocalUidEvent) {
-                                SOCIALD_LOG_DEBUG("Event" << eventId << "was synced by another Sailfish OS device, reusing local uid:" << localUid);
-                                event->setUid(localUid);
-                            }
-                        }
-                    }
-                    bool changed = true; // set to true as it's an addition, no need to check for delta.
-                    const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
-                    jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed); // direct conversion
-                    clampEventTimeToSync(event);
-                    SOCIALD_LOG_DEBUG("Inserting event with new lastModified time: " << event->lastModified().toString());
-
-                    if (!m_calendar->addEvent(event, googleNotebook->uid())) {
-                        SOCIALD_LOG_ERROR("Could not add dissociated occurrence to calendar:" << parentId << recurrenceId.toString());
-                        m_syncSucceeded = false;
-                        continue; // we don't return, but instead attempt to finish other event modifications
-                    }
-                    m_recurringEventIdToKCalUid.insert(eventId, event->uid());
-
-                    // Add the new event to the local events map, in case there are any future modifications to it in the same sync
-                    QString gcalId = gCalEventId(event);
-                    if (gcalId.isEmpty()) {
-                        gcalId = upsyncedUidMapping.value(event->uid());
-                    }
-                    if (gcalId.size() && event) {
-                        allLocalEventsMap.insert(gcalId, event);
-                    }
+                    success = applyRemoteInsert(eventId, eventData, calendarId, upsyncedUidMapping,
+                                                allLocalEventsMap);
                 } break;
                 default: break;
             }
+            m_syncSucceeded &= success;
         }
     }
 

@@ -128,6 +128,26 @@ private:
     void handleInsertModifyReply(QNetworkReply *reply);
     void performSequencedUpsyncs(const QNetworkReply *reply);
 
+    KCalendarCore::Event::Ptr addDummyParent(const QJsonObject &eventData,
+                                             const QString &parentId,
+                                             const mKCal::Notebook::Ptr googleNotebook);
+
+    bool applyRemoteDelete(const QString &eventId,
+                           QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap);
+    bool applyRemoteDeleteOccurence(const QString &eventId,
+                                    const QJsonObject &eventData,
+                                    QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap);
+    bool applyRemoteModify(const QString &eventId,
+                           const QJsonObject &eventData,
+                           const QString &calendarId,
+                           QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap);
+    bool applyRemoteInsert(const QString &eventId,
+                           const QJsonObject &eventData,
+                           const QString &calendarId,
+                           const QHash<QString, QString> &upsyncedUidMapping,
+                           QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap);
+
+
 private Q_SLOTS:
     void calendarsFinishedHandler();
     void eventsFinishedHandler();
