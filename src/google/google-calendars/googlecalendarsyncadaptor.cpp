@@ -54,6 +54,8 @@ const QByteArray NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY = QByteArrayLiteral("syncTo
 const QByteArray NOTEBOOK_SERVER_ID_PROPERTY = QByteArrayLiteral("calendarServerId");
 const QByteArray NOTEBOOK_EMAIL_PROPERTY = QByteArrayLiteral("userPrincipalEmail");
 const int COLLISION_ERROR_MAX_CONSECUTIVE = 8;
+const QByteArray VOLATILE_APP = QByteArrayLiteral("VOLATILE");
+const QByteArray VOLATILE_NAME = QByteArrayLiteral("SYNC-FAILURE");
 const QString ERROR_REASON_NON_ORGANIZER = QStringLiteral("forbiddenForNonOrganizer");
 
 void errorDumpStr(const QString &str)
@@ -1001,6 +1003,7 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
 {
     if (m_accountId != 0) {
         if (!m_syncSucceeded) {
+            SOCIALD_LOG_TRACE("Sync failed, configuring for next sync");
             // sync failed.  check to see if we need to apply any changes to the database.
             QSet<QString> calendarsRequiringChange;
             for (const QString &calendarId : m_timeMinFailure) {
@@ -1016,10 +1019,12 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
                     if (m_syncTokenFailure.contains(calendarId)) {
                         // this sync cycle failed due to the sync token being invalidated server-side.
                         // trigger clean sync with wide time span on next sync.
+                        SOCIALD_LOG_INFO("Clearing sync time for calendar:" << calendarId);
                         notebook->setSyncDate(QDateTime());
                     } else if (m_timeMinFailure.contains(calendarId)) {
                         // this sync cycle failed due to the timeMin value being too far in the past.
                         // trigger clean sync with short time span on next sync.
+                        SOCIALD_LOG_INFO("Setting sync time to yesterday for calendar:" << calendarId);
                         notebook->setSyncDate(yesterdayDate);
                     }
                     notebook->setCustomProperty(NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY, QString());
@@ -1062,10 +1067,13 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
                 }
             }
         }
+
+        // Flag any errors
+        applySyncFailureFlags();
     }
 
+    SOCIALD_LOG_DEBUG("Saving:" << m_storageNeedsSave);
     if (m_storageNeedsSave) {
-        SOCIALD_LOG_DEBUG("Saving");
         m_storage->save(mKCal::ExtendedStorage::PurgeDeleted);
     }
     m_storageNeedsSave = false;
@@ -1106,7 +1114,7 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
         foreach (const KCalendarCore::Incidence::Ptr incidence, allIncidences) {
             if (!notebookIncidenceUids.contains(incidence->uid())) {
                 // orphan/ghost incidence.  must be deleted.
-                SOCIALD_LOG_DEBUG("deleting orphan event with uid:" << incidence->uid());
+                SOCIALD_LOG_DEBUG("deleting local orphan event with uid:" << incidence->uid());
                 m_calendar->deleteIncidence(m_calendar->incidence(incidence->uid(), incidence->recurrenceId()));
                 foundOrphans++;
             }
@@ -1123,6 +1131,7 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
     }
 
     m_storage->close();
+    SOCIALD_LOG_INFO("Sync completed");
 }
 
 void GoogleCalendarSyncAdaptor::purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode mode)
@@ -1166,6 +1175,7 @@ void GoogleCalendarSyncAdaptor::beginSync(int accountId, const QString &accessTo
     m_purgeList.clear();
     m_deletedGcalIdToIncidence.clear();
     m_sequenced.clear();
+    m_eventSyncFlags.clear();
     m_syncSucceeded = true; // set to false on error
     m_syncedDateTime = QDateTime::currentDateTimeUtc();
     m_collisionErrorCount = 0;
@@ -2261,6 +2271,7 @@ void GoogleCalendarSyncAdaptor::handleErrorReply(QNetworkReply *reply)
     QDateTime recurrenceId = reply->property("recurrenceId").toDateTime();
     const QByteArray &replyData = reply->readAll();
     int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QString kcalEventId = reply->property("kcalEventId").toString();
 
     // error occurred during request.
     SOCIALD_LOG_ERROR("error: calendarId:" << reply->property("calendarId").toString());
@@ -2280,6 +2291,7 @@ void GoogleCalendarSyncAdaptor::handleErrorReply(QNetworkReply *reply)
             SOCIALD_LOG_ERROR("Usage limit reached. Please try syncing again later.");
             m_syncSucceeded = false;
         }
+        flagUploadFailure(kcalEventId);
     } else if (httpCode == 410) {
         // HTTP 410 GONE "deleted"
         // The event was already deleted on the server, so continue as normal
@@ -2300,9 +2312,11 @@ void GoogleCalendarSyncAdaptor::handleErrorReply(QNetworkReply *reply)
             reInsertWithRandomId(reply);
         } else {
             SOCIALD_LOG_TRACE("Reached" << m_collisionErrorCount << "id collisions; giving up");
+            flagUploadFailure(kcalEventId);
             m_syncSucceeded = false;
         }
     } else {
+        flagUploadFailure(kcalEventId);
         m_syncSucceeded = false;
     }
 }
@@ -2348,6 +2362,7 @@ void GoogleCalendarSyncAdaptor::handleInsertModifyReply(QNetworkReply *reply)
         SOCIALD_LOG_ERROR("error occurred while upsyncing calendar event" << typeStr <<
                           "to Google account" << m_accountId << "; got:");
         errorDumpStr(QString::fromUtf8(replyData));
+        flagUploadFailure(kcalEventId);
         m_syncSucceeded = false;
     } else {
         // No collision for this upsync, so reset the collision error count
@@ -2369,6 +2384,7 @@ void GoogleCalendarSyncAdaptor::handleInsertModifyReply(QNetworkReply *reply)
                 SOCIALD_LOG_TRACE("Local upsync response json:");
                 traceDumpStr(QString::fromUtf8(replyData));
                 m_changesFromUpsync.insertMulti(calendarId, qMakePair<KCalendarCore::Event::Ptr,QJsonObject>(event, parsed));
+                flagUploadSuccess(kcalEventId);
             }
         }
     }
@@ -2587,7 +2603,12 @@ bool GoogleCalendarSyncAdaptor::applyRemoteDelete(const QString &eventId,
                                                   QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap)
 {
     SOCIALD_LOG_DEBUG("Event deleted remotely:" << eventId);
-    m_calendar->deleteEvent(allLocalEventsMap.value(eventId));
+    KCalendarCore::Event::Ptr doomed = allLocalEventsMap.value(eventId);
+    if (!m_calendar->deleteEvent(doomed)) {
+        LOG_WARNING("Unable to delete incidence: " << doomed->uid() << doomed->recurrenceId().toString());
+        flagDeleteFailure(doomed->uid());
+        return false;
+    }
     return true;
 }
 
@@ -2842,7 +2863,12 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
                 } break;
                 default: break;
             }
-            m_syncSucceeded &= success;
+
+            if (success) {
+                flagUpdateSuccess(eventId);
+            } else {
+                m_syncSucceeded = false;
+            }
         }
     }
 
@@ -2857,6 +2883,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
         const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
         jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed);
         if (changed) {
+            flagUpdateSuccess(event->uid());
             SOCIALD_LOG_DEBUG("Two-way calendar sync with account" << m_accountId << ": re-updating event:" << event->summary());
         }
     }
@@ -2997,5 +3024,99 @@ QJsonObject GoogleCalendarSyncAdaptor::kCalToJson(KCalendarCore::Event::Ptr even
     }
 
     return retn;
+}
+
+void GoogleCalendarSyncAdaptor::flagUploadFailure(const QString &kcalEventId)
+{
+    SOCIALD_LOG_DEBUG("Setting upsync failure flag for:" << kcalEventId);
+    m_eventSyncFlags.insert(kcalEventId, UploadFailure);
+}
+
+void GoogleCalendarSyncAdaptor::flagUploadSuccess(const QString &kcalEventId)
+{
+    // Errors take precedence
+    if (!m_eventSyncFlags.contains(kcalEventId)) {
+        SOCIALD_LOG_DEBUG("Setting upsync success flag for:" << kcalEventId);
+        m_eventSyncFlags.insert(kcalEventId, NoSyncFailure);
+    }
+}
+
+void GoogleCalendarSyncAdaptor::flagUpdateSuccess(const QString &kcalEventId)
+{
+    // Errors take precedence
+    if (!m_eventSyncFlags.contains(kcalEventId)) {
+        SOCIALD_LOG_DEBUG("Setting update success flag for:" << kcalEventId);
+        m_eventSyncFlags.insert(kcalEventId, NoSyncFailure);
+    }
+}
+
+void GoogleCalendarSyncAdaptor::flagDeleteFailure(const QString &kcalEventId)
+{
+    SOCIALD_LOG_DEBUG("Setting delete failure flag for:" << kcalEventId);
+    m_eventSyncFlags.insert(kcalEventId, DeleteFailure);
+}
+
+void GoogleCalendarSyncAdaptor::applySyncFailureFlag(KCalendarCore::Event::Ptr event, SyncFailure flag)
+{
+    const QString current = event->customProperty(VOLATILE_APP, VOLATILE_NAME);
+    QString updated;
+
+    switch (flag) {
+    case UploadFailure:
+        updated = QStringLiteral("upload");
+        break;
+    case UpdateFailure:
+        updated = QStringLiteral("update");
+        break;
+    case DeleteFailure:
+        updated = QStringLiteral("delete");
+        break;
+    case NoSyncFailure:
+    default:
+        updated = QString();
+        break;
+    }
+
+    if (current != updated) {
+        SOCIALD_LOG_DEBUG("Changing flag from" << current << "to" << updated << "for" << event->uid());
+        const QDateTime lastModified = event->lastModified();
+        if (!updated.isEmpty()) {
+            event->setCustomProperty(VOLATILE_APP, VOLATILE_NAME, updated);
+
+        } else {
+            event->removeCustomProperty(VOLATILE_APP, VOLATILE_NAME);
+        }
+        event->setLastModified(lastModified);
+        m_storageNeedsSave = true;
+    }
+}
+
+void GoogleCalendarSyncAdaptor::applySyncFailureFlags()
+{
+    SOCIALD_LOG_DEBUG("Applying sync failure flags for calendar");
+    // Iterate over the incidences with flags associated with them
+    QMap<QString, SyncFailure>::const_iterator iter = m_eventSyncFlags.constBegin();
+    while (iter != m_eventSyncFlags.constEnd()) {
+        const QString &uid = iter.key();
+        const SyncFailure flag = iter.value();
+
+        KCalendarCore::Event::Ptr event = m_calendar->event(uid);
+        if (!event) {
+            // Load it if it wasn't already
+            m_storage->loadSeries(uid);
+            event = m_calendar->event(uid);
+        }
+
+        // Find the parent event
+        if (event) {
+            applySyncFailureFlag(event, flag);
+            // Iterate over the exception instances of the parent
+            const KCalendarCore::Event::List instances = m_calendar->eventInstances(event);
+            for (KCalendarCore::Event::Ptr instance : instances) {
+                applySyncFailureFlag(instance, flag);
+            }
+        }
+        ++iter;
+    }
 }
 

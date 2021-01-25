@@ -67,6 +67,13 @@ private:
         Owner = 4
     };
 
+    enum SyncFailure {
+        NoSyncFailure,
+        UploadFailure,
+        UpdateFailure,
+        DeleteFailure
+    };
+
     struct UpsyncChange {
         UpsyncChange() : upsyncType(NoChange) {}
         QString accessToken;
@@ -148,6 +155,13 @@ private:
                            QMap<QString, KCalendarCore::Event::Ptr> &allLocalEventsMap);
 
 
+    void flagUploadFailure(const QString &kcalEventId);
+    void flagUploadSuccess(const QString &kcalEventId);
+    void flagUpdateSuccess(const QString &kcalEventId);
+    void flagDeleteFailure(const QString &kcalEventId);
+    void applySyncFailureFlag(KCalendarCore::Event::Ptr event, SyncFailure flag);
+    void applySyncFailureFlags();
+
 private Q_SLOTS:
     void calendarsFinishedHandler();
     void eventsFinishedHandler();
@@ -182,6 +196,7 @@ private:
     // parent upsync, as recorded in UpsyncChange::eventId
     QMultiHash<QString, UpsyncChange> m_sequenced;
     int m_collisionErrorCount;
+    QMap<QString, SyncFailure> m_eventSyncFlags;
 };
 
 #endif // GOOGLECALENDARSYNCADAPTOR_H
