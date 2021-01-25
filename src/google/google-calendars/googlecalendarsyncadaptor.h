@@ -95,10 +95,14 @@ private:
     void updateLocalCalendarNotebooks(const QString &accessToken, bool needCleanSync);
     QList<UpsyncChange> determineSyncDelta(const QString &accessToken,
                                            const QString &calendarId, const QDateTime &since);
-    void upsyncChanges(const QString &accessToken,
-                       GoogleCalendarSyncAdaptor::ChangeType upsyncType,
-                       const QString &kcalEventId, const QDateTime &recurrenceId, const QString &calendarId,
-                       const QString &eventId,const QByteArray &eventData);
+
+    void queueSequencedInsertion(QList<UpsyncChange> &changesToUpsync,
+                                 const KCalendarCore::Event::Ptr event,
+                                 const QString &calendarId,
+                                 const QString &accessToken);
+
+    void reInsertWithRandomId(const QNetworkReply *reply);
+    void upsyncChanges(const UpsyncChange &changeToUpsync);
 
     void applyRemoteChangesLocally();
     void updateLocalCalendarNotebookEvents(const QString &calendarId);
@@ -118,6 +122,11 @@ private:
 
     const QList<QDateTime> getExceptionInstanceDates(const KCalendarCore::Event::Ptr event) const;
     QJsonObject kCalToJson(KCalendarCore::Event::Ptr event, KCalendarCore::ICalFormat &icalFormat, bool setUidProperty = false) const;
+
+    void handleErrorReply(QNetworkReply *reply);
+    void handleDeleteReply(QNetworkReply *reply);
+    void handleInsertModifyReply(QNetworkReply *reply);
+    void performSequencedUpsyncs(const QNetworkReply *reply);
 
 private Q_SLOTS:
     void calendarsFinishedHandler();
@@ -149,6 +158,10 @@ private:
     mutable KCalendarCore::ICalFormat m_icalFormat;
     bool m_storageNeedsSave;
     QDateTime m_syncedDateTime;
+    // Sequenced upsync changes are referenced by the gcalId of the
+    // parent upsync, as recorded in UpsyncChange::eventId
+    QMultiHash<QString, UpsyncChange> m_sequenced;
+    int m_collisionErrorCount;
 };
 
 #endif // GOOGLECALENDARSYNCADAPTOR_H

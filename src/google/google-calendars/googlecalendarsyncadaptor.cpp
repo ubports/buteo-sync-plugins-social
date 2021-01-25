@@ -53,6 +53,7 @@ const int GOOGLE_CAL_SYNC_PLUGIN_VERSION = 3;
 const QByteArray NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY = QByteArrayLiteral("syncToken");
 const QByteArray NOTEBOOK_SERVER_ID_PROPERTY = QByteArrayLiteral("calendarServerId");
 const QByteArray NOTEBOOK_EMAIL_PROPERTY = QByteArrayLiteral("userPrincipalEmail");
+const int COLLISION_ERROR_MAX_CONSECUTIVE = 8;
 
 void errorDumpStr(const QString &str)
 {
@@ -842,6 +843,72 @@ void setLastSyncSuccessful(int accountId)
     settingsFile.sync();
 }
 
+// Move all items with a recurrenceId after those without
+// Retain the same order within the two groups
+void reorderAdditions(KCalendarCore::Incidence::List &addedList) {
+    // This is a QVector so we want to avoid expensive insertions/deletions
+    int nextSwap = 0;
+    for (int pos = 0; pos < addedList.size() - 1; ++pos) {
+        const KCalendarCore::Incidence::Ptr from = addedList[pos];
+        if (from->hasRecurrenceId()) {
+            // Need to swap
+            if (nextSwap <= pos) {
+                nextSwap = pos + 1;
+            }
+            // Find the next sensible swap position
+            while (nextSwap < addedList.size() - 1 && addedList[nextSwap]->hasRecurrenceId()) {
+                ++nextSwap;
+            }
+            // Swap the item positions
+            addedList[pos] = addedList[nextSwap];
+            addedList[nextSwap] = from;
+        }
+    }
+}
+
+QString toBase32hex(QByteArray bytes)
+{
+    // See RFC2938 section 3.1.2
+    static const char convert[] = "0123456789abcdefghijklmnopqrstuv";
+    int const length = bytes.length();
+    QString result;
+
+    // pos represents the bit position, taking 5 at a time
+    for (int pos = 0; pos < length * 8; pos += 5) {
+        quint8 const startbyte = pos / 8;
+        quint8 const underflowstart = pos % 8;
+        quint8 const underflowbits = underflowstart > 3 ? 8 - underflowstart : 5;
+        quint8 const overflowend = 5 - underflowbits;
+        quint8 const underflowmask = ((2 << (underflowbits - 1)) - 1) << underflowstart;
+
+        int val = (bytes[startbyte] & underflowmask) >> underflowstart;
+        if ((overflowend > 0) && (startbyte < (length - 1))) {
+            quint8 const overflowmask = ((2 << (overflowend - 1)) - 1);
+            val += (bytes[startbyte + 1] & overflowmask) << underflowbits;
+        }
+        Q_ASSERT(val < 32);
+        result += convert[val];
+    }
+
+    return result;
+}
+
+QString generate_uuid()
+{
+    // UUID documentation here:
+    // https://developers.google.com/calendar/v3/reference/events#id
+    // Generate using RFC4122
+    return toBase32hex(QUuid::createUuid().toRfc4122());
+}
+
+QByteArray jsonReplaceValue(const QByteArray &json, const QString &key, const QJsonValue &value)
+{
+    // This is expensive, so should be used sparingly
+    QJsonObject object = QJsonDocument::fromJson(json).object();
+    object.insert(key, value);
+    return QJsonDocument(object).toJson();
+}
+
 }
 
 GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
@@ -1039,8 +1106,10 @@ void GoogleCalendarSyncAdaptor::beginSync(int accountId, const QString &accessTo
     m_calendarIdToEventObjects.clear();
     m_purgeList.clear();
     m_deletedGcalIdToIncidence.clear();
+    m_sequenced.clear();
     m_syncSucceeded = true; // set to false on error
     m_syncedDateTime = QDateTime::currentDateTimeUtc();
+    m_collisionErrorCount = 0;
     requestCalendars(accessToken, needCleanSync);
 }
 
@@ -1422,7 +1491,6 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
     decrementSemaphore(m_accountId);
 }
 
-
 mKCal::Notebook::Ptr GoogleCalendarSyncAdaptor::notebookForCalendarId(const QString &calendarId) const
 {
     foreach (mKCal::Notebook::Ptr notebook, m_storage->notebooks()) {
@@ -1469,13 +1537,7 @@ void GoogleCalendarSyncAdaptor::finishedRequestingRemoteEvents(const QString &ac
             } else {
                 SOCIALD_LOG_DEBUG("upsyncing" << changesToUpsync.size() << "local changes to the remote server");
                 for (int i = 0; i < changesToUpsync.size(); ++i) {
-                    upsyncChanges(changesToUpsync[i].accessToken,
-                                  changesToUpsync[i].upsyncType,
-                                  changesToUpsync[i].kcalEventId,
-                                  changesToUpsync[i].recurrenceId,
-                                  changesToUpsync[i].calendarId,
-                                  changesToUpsync[i].eventId,
-                                  changesToUpsync[i].eventData);
+                    upsyncChanges(changesToUpsync[i]);
                 }
             }
         } else {
@@ -1505,7 +1567,8 @@ const QList<QDateTime> GoogleCalendarSyncAdaptor::getExceptionInstanceDates(cons
 
 // Determine the sync delta, and then cache the required downsynced changes and return the required changes to upsync.
 QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determineSyncDelta(const QString &accessToken,
-                                                                                             const QString &calendarId, const QDateTime &since)
+                                                                                             const QString &calendarId,
+                                                                                             const QDateTime &since)
 {
     Q_UNUSED(accessToken) // in the future, we might need it to download images/data associated with the event.
 
@@ -1875,6 +1938,9 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
             }
         }
 
+        // move parent insertions before recurrence exclusion insertions
+        reorderAdditions(addedList);
+
         // finally, queue up insertions.
         Q_FOREACH (KCalendarCore::Incidence::Ptr incidence, addedList) {
             KCalendarCore::Event::Ptr event = m_calendar->event(incidence->uid(), incidence->recurrenceId());
@@ -1943,18 +2009,8 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
                     changesToUpsync.append(modification);
                 } else {
                     localAdded++;
-                    QByteArray eventBlob = QJsonDocument(kCalToJson(event, m_icalFormat, true)).toJson(); // true = insert extended UID property
-                    SOCIALD_LOG_TRACE("queueing up insertion for local id:" << incidence->uid());
-                    traceDumpStr(QString::fromUtf8(eventBlob));
-                    UpsyncChange insertion;
-                    insertion.accessToken = accessToken;
-                    insertion.upsyncType = GoogleCalendarSyncAdaptor::Insert;
-                    insertion.kcalEventId = event->uid();
-                    insertion.recurrenceId = event->recurrenceId();
-                    insertion.calendarId = calendarId;
-                    insertion.eventId = QString();
-                    insertion.eventData = eventBlob;
-                    changesToUpsync.append(insertion);
+                    // This is an insertion, so we may need it to run after a parent insertion completed
+                    queueSequencedInsertion(changesToUpsync, event, calendarId, accessToken);
                 }
             }
         }
@@ -1968,12 +2024,70 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
     return changesToUpsync;
 }
 
-void GoogleCalendarSyncAdaptor::upsyncChanges(const QString &accessToken,
-                                              GoogleCalendarSyncAdaptor::ChangeType upsyncType,
-                                              const QString &kcalEventId, const QDateTime &recurrenceId,
-                                              const QString &calendarId, const QString &eventId,
-                                              const QByteArray &eventData)
+void GoogleCalendarSyncAdaptor::queueSequencedInsertion(QList<UpsyncChange> &changesToUpsync,
+                                                        const KCalendarCore::Event::Ptr event,
+                                                        const QString &calendarId,
+                                                        const QString &accessToken)
 {
+    // Last parameter true -> "insert extended UID property"
+    QJsonObject eventJson = kCalToJson(event, m_icalFormat, true);
+
+    // Check whether the insertion needs to be sequenced after its parent
+    QString insertionGcalId;
+    UpsyncChange *parentChange = nullptr;
+    if (event->hasRecurrenceId()) {
+        // This event has a parent, so we must check if it needs to be sequenced
+        for (UpsyncChange &change : changesToUpsync) {
+            if ((change.upsyncType == Insert) && (change.kcalEventId == event->uid()) && (change.recurrenceId.isNull())) {
+                parentChange = &change;
+                break;
+            }
+        }
+
+        // Use our generated GCalId to refer to the parent
+        if (parentChange && !parentChange->eventId.isEmpty()) {
+            // Replace the recurringEventId
+            eventJson.insert(QLatin1String("recurringEventId"), parentChange->eventId);
+        }
+    } else {
+        // There will be no gcalId yet, so we can generate and add our own
+        insertionGcalId = generate_uuid();
+        SOCIALD_LOG_DEBUG("Generated id for new event:" << insertionGcalId);
+        eventJson.insert(QLatin1String("id"), insertionGcalId);
+    }
+
+    SOCIALD_LOG_TRACE("queueing up insertion for local id:" << event->uid());
+    UpsyncChange insertion;
+    insertion.accessToken = accessToken;
+    insertion.upsyncType = GoogleCalendarSyncAdaptor::Insert;
+    insertion.kcalEventId = event->uid();
+    insertion.recurrenceId = event->recurrenceId();
+    insertion.calendarId = calendarId;
+    insertion.eventId = insertionGcalId;
+    insertion.eventData = QJsonDocument(eventJson).toJson();
+    traceDumpStr(QString::fromUtf8(insertion.eventData));
+
+    // At this point we either add the upsync change to the default queue, or to the sequenced queue
+    if (parentChange && !parentChange->eventId.isEmpty()) {
+        SOCIALD_LOG_DEBUG("Sequencing event after its parent:" << parentChange->eventId);
+        // Add the insertion to the appropriate sublist
+        m_sequenced.insertMulti(parentChange->eventId, insertion);
+    } else {
+        SOCIALD_LOG_DEBUG("Upsyncing event in first round without sequencing:" << event->uid() << event->summary());
+        changesToUpsync.append(insertion);
+    }
+}
+
+void GoogleCalendarSyncAdaptor::upsyncChanges(const UpsyncChange &changeToUpsync)
+{
+    const QString &accessToken = changeToUpsync.accessToken;
+    GoogleCalendarSyncAdaptor::ChangeType upsyncType = changeToUpsync.upsyncType;
+    const QString &kcalEventId = changeToUpsync.kcalEventId;
+    const QDateTime &recurrenceId = changeToUpsync.recurrenceId;
+    const QString &calendarId = changeToUpsync.calendarId;
+    const QString &eventId = changeToUpsync.eventId;
+    const QByteArray &eventData = changeToUpsync.eventData;
+
     QUrl requestUrl = upsyncType == GoogleCalendarSyncAdaptor::Insert
                     ? QUrl(QString::fromLatin1("https://www.googleapis.com/calendar/v3/calendars/%1/events").arg(calendarId))
                     : QUrl(QString::fromLatin1("https://www.googleapis.com/calendar/v3/calendars/%1/events/%2").arg(calendarId).arg(eventId));
@@ -2013,11 +2127,12 @@ void GoogleCalendarSyncAdaptor::upsyncChanges(const QString &accessToken,
     if (reply) {
         reply->setProperty("accountId", m_accountId);
         reply->setProperty("accessToken", accessToken);
+        reply->setProperty("upsyncType", static_cast<int>(upsyncType));
         reply->setProperty("kcalEventId", kcalEventId);
         reply->setProperty("recurrenceId", recurrenceId);
         reply->setProperty("calendarId", calendarId);
         reply->setProperty("eventId", eventId);
-        reply->setProperty("upsyncType", static_cast<int>(upsyncType));
+        reply->setProperty("eventData", eventData);
         connect(reply, SIGNAL(error(QNetworkReply::NetworkError)),
                 this, SLOT(errorHandler(QNetworkReply::NetworkError)));
         connect(reply, SIGNAL(sslErrors(QList<QSslError>)),
@@ -2039,17 +2154,181 @@ void GoogleCalendarSyncAdaptor::upsyncChanges(const QString &accessToken,
     }
 }
 
-void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
+void GoogleCalendarSyncAdaptor::reInsertWithRandomId(const QNetworkReply *reply)
 {
-    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    Q_ASSERT(reply->property("accountId").toInt() == m_accountId);
+    QString accessToken = reply->property("accessToken").toString();
+    ChangeType upsyncType = ChangeType(reply->property("upsyncType").toInt());
     QString kcalEventId = reply->property("kcalEventId").toString();
     QDateTime recurrenceId = reply->property("recurrenceId").toDateTime();
     QString calendarId = reply->property("calendarId").toString();
-    int upsyncType = reply->property("upsyncType").toInt();
-    QByteArray replyData = reply->readAll();
-    int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    bool isError = reply->property("isError").toBool();
     QString eventId = reply->property("eventId").toString();
+    QByteArray eventData = reply->property("eventData").toByteArray();
+
+    // The gcalId we chose randomly collided, so we should try with another
+    SOCIALD_LOG_TRACE("GCalId collision, try with something different");
+    QString insertionGcalId = generate_uuid();
+
+    SOCIALD_LOG_DEBUG("Generated id for new event:" << insertionGcalId);
+
+    // Update the parent's sequenced events
+    if (m_sequenced.contains(eventId)) {
+        // Moving values in-place is problemmatic in case (eventId == insertionGuid) so copy them
+        QList<UpsyncChange> changesToUpsync = m_sequenced.values(eventId);
+        m_sequenced.remove(eventId);
+        for (UpsyncChange &changeToUpsync : changesToUpsync) {
+            SOCIALD_LOG_DEBUG("Updating sequenced gcalId for event" << changeToUpsync.kcalEventId << "recurrenceId" << changeToUpsync.recurrenceId);
+            changeToUpsync.eventData = jsonReplaceValue(changeToUpsync.eventData, "recurringEventId", insertionGcalId);
+            m_sequenced.insertMulti(insertionGcalId, changeToUpsync);
+        }
+    }
+
+    UpsyncChange changeToUpsync;
+    changeToUpsync.accessToken = accessToken;
+    changeToUpsync.upsyncType = upsyncType;
+    changeToUpsync.kcalEventId = kcalEventId;
+    changeToUpsync.recurrenceId = recurrenceId;
+    changeToUpsync.calendarId = calendarId;
+    changeToUpsync.eventId = insertionGcalId;
+    changeToUpsync.eventData = jsonReplaceValue(eventData, "id", insertionGcalId);
+    upsyncChanges(changeToUpsync);
+}
+
+void GoogleCalendarSyncAdaptor::handleErrorReply(QNetworkReply *reply)
+{
+    Q_ASSERT(reply->property("accountId").toInt() == m_accountId);
+    ChangeType upsyncType = ChangeType(reply->property("upsyncType").toInt());
+    QDateTime recurrenceId = reply->property("recurrenceId").toDateTime();
+    const QByteArray &replyData = reply->readAll();
+    int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // error occurred during request.
+    SOCIALD_LOG_ERROR("error: calendarId:" << reply->property("calendarId").toString());
+    SOCIALD_LOG_ERROR("error: eventId:" << reply->property("eventId").toString());
+    SOCIALD_LOG_ERROR("error: summary:" << reply->property("summary").toString());
+    SOCIALD_LOG_ERROR("error" << httpCode << "occurred while upsyncing calendar data to Google account" << m_accountId << "; got:");
+    errorDumpStr(QString::fromUtf8(replyData));
+
+    // If we get a ContentOperationNotPermittedError, then allow the sync cycle to succeed.
+    // Most likely, it's an attempt to modify a shared event, and Google prevents
+    // any user other than the original creator of the event from modifying those.
+    // Such errors should not prevent the rest of the sync cycle from succeeding.
+    // TODO: is there some way to detect whether I am the organizer/owner of the event?
+    if (reply->error() == QNetworkReply::ContentOperationNotPermittedError) {
+        SOCIALD_LOG_TRACE("Ignoring 403 due to shared calendar resource");
+    } else if (httpCode == 410) {
+        // HTTP 410 GONE "deleted"
+        // The event was already deleted on the server, so continue as normal
+        SOCIALD_LOG_TRACE("Event already deleted on the server, so we're now in sync");
+    } else if (httpCode == 409) {
+        // HTTP 409 CONFLICT "The requested identifier already exists"
+        // This should be a super-rare occurrence
+        // We only generate gcalIds for insertions without recurrenceIds
+        Q_ASSERT(upsyncType == GoogleCalendarSyncAdaptor::Insert);
+        Q_ASSERT(recurrenceId.isNull());
+        ++m_collisionErrorCount;
+
+        if (m_collisionErrorCount < COLLISION_ERROR_MAX_CONSECUTIVE) {
+            reInsertWithRandomId(reply);
+        } else {
+            SOCIALD_LOG_TRACE("Reached" << m_collisionErrorCount << "id collisions; giving up");
+            m_syncSucceeded = false;
+        }
+    } else {
+        m_syncSucceeded = false;
+    }
+}
+
+void GoogleCalendarSyncAdaptor::handleDeleteReply(QNetworkReply *reply)
+{
+    Q_ASSERT(reply->property("accountId").toInt() == m_accountId);
+    QString kcalEventId = reply->property("kcalEventId").toString();
+    QString eventId = reply->property("eventId").toString();
+    const QByteArray &replyData = reply->readAll();
+    int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // we expect an empty response body on success for Delete operations
+    // the only exception is if there's an error, in which case this should have been
+    // picked up by the "isError" clause.
+    if (replyData.isEmpty()) {
+        KCalendarCore::Incidence::Ptr incidence = m_deletedGcalIdToIncidence.value(eventId);
+        SOCIALD_LOG_TRACE("Deletion confirmed, purging event: " << kcalEventId);
+        m_purgeList += incidence;
+    } else {
+        // This path should never be taken
+        SOCIALD_LOG_ERROR("error" << httpCode << "occurred while upsyncing calendar event deletion to Google account" << m_accountId << "; got:");
+        errorDumpStr(QString::fromUtf8(replyData));
+        m_syncSucceeded = false;
+    }
+}
+
+void GoogleCalendarSyncAdaptor::handleInsertModifyReply(QNetworkReply *reply)
+{
+    ChangeType upsyncType = ChangeType(reply->property("upsyncType").toInt());
+    QString kcalEventId = reply->property("kcalEventId").toString();
+    QDateTime recurrenceId = reply->property("recurrenceId").toDateTime();
+    QString calendarId = reply->property("calendarId").toString();
+    const QByteArray &replyData = reply->readAll();
+
+    // we expect an event resource body on success for Insert/Modify requests.
+    bool ok = false;
+    QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
+    if (!ok) {
+        QString typeStr = upsyncType == GoogleCalendarSyncAdaptor::Insert
+                        ? QString::fromLatin1("insertion")
+                        : QString::fromLatin1("modification");
+        SOCIALD_LOG_ERROR("error occurred while upsyncing calendar event" << typeStr <<
+                          "to Google account" << m_accountId << "; got:");
+        errorDumpStr(QString::fromUtf8(replyData));
+        m_syncSucceeded = false;
+    } else {
+        // No collision for this upsync, so reset the collision error count
+        m_collisionErrorCount = 0;
+        // TODO: reduce code duplication between here and the other function.
+        // Search for the device Notebook matching this CalendarId
+        mKCal::Notebook::Ptr googleNotebook = notebookForCalendarId(calendarId);
+        if (googleNotebook.isNull()) {
+            SOCIALD_LOG_ERROR("calendar" << calendarId << "doesn't have a notebook for Google account with id" << m_accountId);
+            m_syncSucceeded = false;
+        } else {
+            // cache the update to this event in the local calendar
+            m_storage->loadNotebookIncidences(googleNotebook->uid());
+            KCalendarCore::Event::Ptr event = m_calendar->event(kcalEventId, recurrenceId);
+            if (!event) {
+                SOCIALD_LOG_ERROR("event" << kcalEventId << recurrenceId.toString() << "was deleted locally during sync of Google account with id" << m_accountId);
+                m_syncSucceeded = false;
+            } else {
+                SOCIALD_LOG_TRACE("Local upsync response json:");
+                traceDumpStr(QString::fromUtf8(replyData));
+                m_changesFromUpsync.insertMulti(calendarId, qMakePair<KCalendarCore::Event::Ptr,QJsonObject>(event, parsed));
+            }
+        }
+    }
+}
+
+void GoogleCalendarSyncAdaptor::performSequencedUpsyncs(const QNetworkReply *reply)
+{
+    QString eventId = reply->property("eventId").toString();
+
+    SOCIALD_LOG_DEBUG("Performing sequenced upsyncs");
+
+    // Trigger any sequenced upsyncs before we decrement the semaphore
+    QMultiHash<QString, UpsyncChange>::const_iterator iter = m_sequenced.find(eventId);
+    while (iter != m_sequenced.end() && iter.key() == eventId) {
+        const UpsyncChange &changeToUpsync = iter.value();
+        SOCIALD_LOG_DEBUG("Sequenced upsync for event" << changeToUpsync.kcalEventId << "recurrenceId" << changeToUpsync.recurrenceId);
+        upsyncChanges(changeToUpsync);
+        ++iter;
+    }
+}
+
+void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+
+    Q_ASSERT(reply->property("accountId").toInt() == m_accountId);
+    ChangeType upsyncType = ChangeType(reply->property("upsyncType").toInt());
+    bool isError = reply->property("isError").toBool();
 
     // QNetworkReply can report an error even if there isn't one...
     if (isError && reply->error() == QNetworkReply::UnknownContentError
@@ -2063,71 +2342,17 @@ void GoogleCalendarSyncAdaptor::upsyncFinishedHandler()
 
     // parse the calendars' metadata from the response.
     if (isError) {
-        // error occurred during request.
-        SOCIALD_LOG_ERROR("error" << httpCode << "occurred while upsyncing calendar data to Google account" << m_accountId << "; got:");
-        errorDumpStr(QString::fromUtf8(replyData));
-
-        // If we get a ContentOperationNotPermittedError, then allow the sync cycle to succeed.
-        // Most likely, it's an attempt to modify a shared event, and Google prevents
-        // any user other than the original creator of the event from modifying those.
-        // Such errors should not prevent the rest of the sync cycle from succeeding.
-        // TODO: is there some way to detect whether I am the organizer/owner of the event?
-        if (reply->error() == QNetworkReply::ContentOperationNotPermittedError) {
-            SOCIALD_LOG_TRACE("Ignoring 403 due to shared calendar resource");
-        } else if (httpCode == 410) {
-            // HTTP 410 GONE "deleted"
-            // The event was already deleted on the server, so continue as normal
-            SOCIALD_LOG_TRACE("Event already deleted on the server, so we're now in sync");
-        } else {
-            m_syncSucceeded = false;
-        }
+        handleErrorReply(reply);
     } else if (upsyncType == GoogleCalendarSyncAdaptor::Delete) {
-        // we expect an empty response body on success for Delete operations
-        // the only exception is if there's an error, in which case this should have been
-        // picked up by the "isError" clause.
-        if (replyData.isEmpty()) {
-            KCalendarCore::Incidence::Ptr incidence = m_deletedGcalIdToIncidence.value(eventId);
-            SOCIALD_LOG_TRACE("Deletion confirmed, purging event: " << kcalEventId);
-            m_purgeList += incidence;
-        } else {
-            // This path should never be taken
-            SOCIALD_LOG_ERROR("error" << httpCode << "occurred while upsyncing calendar event deletion to Google account" << m_accountId << "; got:");
-            errorDumpStr(QString::fromUtf8(replyData));
-            m_syncSucceeded = false;
-        }
+        handleDeleteReply(reply);
     } else {
-        // we expect an event resource body on success for Insert/Modify requests.
-        bool ok = false;
-        QJsonObject parsed = parseJsonObjectReplyData(replyData, &ok);
-        if (!ok) {
-            QString typeStr = upsyncType == GoogleCalendarSyncAdaptor::Insert
-                            ? QString::fromLatin1("insertion")
-                            : QString::fromLatin1("modification");
-            SOCIALD_LOG_ERROR("error occurred while upsyncing calendar event" << typeStr <<
-                              "to Google account" << m_accountId << "; got:");
-            errorDumpStr(QString::fromUtf8(replyData));
-            m_syncSucceeded = false;
-        } else {
-            // TODO: reduce code duplication between here and the other function.
-            // Search for the device Notebook matching this CalendarId
-            mKCal::Notebook::Ptr googleNotebook = notebookForCalendarId(calendarId);
-            if (googleNotebook.isNull()) {
-                SOCIALD_LOG_ERROR("calendar" << calendarId << "doesn't have a notebook for Google account with id" << m_accountId);
-                m_syncSucceeded = false;
-            } else {
-                // cache the update to this event in the local calendar
-                m_storage->loadNotebookIncidences(googleNotebook->uid());
-                KCalendarCore::Event::Ptr event = m_calendar->event(kcalEventId, recurrenceId);
-                if (!event) {
-                    SOCIALD_LOG_ERROR("event" << kcalEventId << recurrenceId.toString() << "was deleted locally during sync of Google account with id" << m_accountId);
-                    m_syncSucceeded = false;
-                } else {
-                    SOCIALD_LOG_TRACE("Local upsync response json:");
-                    traceDumpStr(QString::fromUtf8(replyData));
-                    m_changesFromUpsync.insertMulti(calendarId, qMakePair<KCalendarCore::Event::Ptr,QJsonObject>(event, parsed));
-                }
-            }
-        }
+        // upsyncType == GoogleCalendarSyncAdaptor::Insert
+        // upsyncType == GoogleCalendarSyncAdaptor::Modify
+        handleInsertModifyReply(reply);
+    }
+
+    if (!isError) {
+        performSequencedUpsyncs(reply);
     }
 
     // we're finished with this request.
@@ -2475,6 +2700,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebookEvents(const QString 
         const QJsonObject eventData(remoteChange.second);
         // all changes are modifications to existing events, since it was an upsync response.
         bool changed = false;
+        SOCIALD_LOG_DEBUG("Updating event:" << event->summary());
         const QList<QDateTime> exceptions = getExceptionInstanceDates(event);
         jsonToKCal(eventData, event, m_serverCalendarIdToDefaultReminderTimes.value(calendarId), m_icalFormat, exceptions, &changed);
         if (changed) {
