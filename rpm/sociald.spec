@@ -9,6 +9,9 @@ BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(Qt5Sql)
 BuildRequires:  pkgconfig(Qt5Network)
+BuildRequires:  pkgconfig(Qt5Gui)
+BuildRequires:  pkgconfig(Qt5Contacts)
+BuildRequires:  qt5-qttools-linguist
 BuildRequires:  pkgconfig(mlite5)
 BuildRequires:  pkgconfig(buteosyncfw5) >= 0.6.36
 BuildRequires:  pkgconfig(libsignon-qt5)
@@ -17,7 +20,9 @@ BuildRequires:  pkgconfig(socialcache) >= 0.0.48
 BuildRequires:  pkgconfig(libsailfishkeyprovider)
 BuildRequires:  pkgconfig(contactcache-qt5)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.3.0
-BuildRequires:  qt5-qttools-linguist
+BuildRequires:  pkgconfig(libmkcal-qt5) >= 0.5.9
+BuildRequires:  pkgconfig(KF5CalendarCore)
+BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
 Requires: buteo-syncfw-qt5-msyncd
 Requires: systemd
 Requires(pre):  sailfish-setup
@@ -42,8 +47,6 @@ A Buteo plugin which provides data synchronization with various social services.
 
 %package facebook-calendars
 Summary:    Provides calendar synchronisation with Facebook
-BuildRequires:  pkgconfig(libmkcal-qt5)
-BuildRequires:  pkgconfig(KF5CalendarCore)
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-calendars
@@ -98,7 +101,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package facebook-signon
 Summary:    Provides signon credentials refreshing with Facebook
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description facebook-signon
@@ -127,8 +129,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-calendars
 Summary:    Provides calendar synchronisation with Google
-BuildRequires:  pkgconfig(libmkcal-qt5) >= 0.5.9
-BuildRequires:  pkgconfig(KF5CalendarCore)
 Requires: %{name} = %{version}-%{release}
 
 %description google-calendars
@@ -156,9 +156,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-contacts
 Summary:    Provides contact synchronisation with Google
-BuildRequires:  pkgconfig(Qt5Gui)
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.1.58
 Requires: %{name} = %{version}-%{release}
 
 %description google-contacts
@@ -186,7 +183,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package google-signon
 Summary:    Provides signon credentials refreshing with Google
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description google-signon
@@ -215,10 +211,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package twitter-notifications
 Summary:    Provides notification synchronisation with Twitter
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
-BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description twitter-notifications
@@ -247,9 +239,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package twitter-posts
 Summary:    Provides post synchronisation with Twitter
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description twitter-posts
@@ -277,7 +266,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package onedrive-signon
 Summary:    Provides signon credentials refreshing with OneDrive
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description onedrive-signon
@@ -305,9 +293,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package vk-posts
 Summary:    Provides post synchronisation with VK
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description vk-posts
@@ -388,7 +373,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package onedrive-backup
 Summary:    Provides backup-blob synchronization for OneDrive
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description onedrive-backup
@@ -429,7 +413,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package dropbox-backup
 Summary:    Provides backup-blob synchronization for Dropbox
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description dropbox-backup
@@ -470,8 +453,6 @@ systemctl-user try-restart msyncd.service || :
 
 %package vk-notifications
 Summary:    Provides notification synchronisation with VK
-BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
-BuildRequires:  qt5-qttools-linguist
 Requires: %{name} = %{version}-%{release}
 
 %description vk-notifications
@@ -499,8 +480,6 @@ systemctl-user restart msyncd.service || :
 
 %package vk-calendars
 Summary:    Provides calendar synchronisation with VK
-BuildRequires:  pkgconfig(libmkcal-qt5)
-BuildRequires:  pkgconfig(KF5CalendarCore)
 Requires: %{name} = %{version}-%{release}
 
 %description vk-calendars
@@ -528,9 +507,6 @@ systemctl-user restart msyncd.service || :
 
 %package vk-contacts
 Summary:    Provides contact synchronisation with VK
-BuildRequires:  pkgconfig(Qt5Gui)
-BuildRequires:  pkgconfig(Qt5Contacts)
-BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions)
 Requires: %{name} = %{version}-%{release}
 
 %description vk-contacts
