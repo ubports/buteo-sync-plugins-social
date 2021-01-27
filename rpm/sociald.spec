@@ -36,6 +36,8 @@ A Buteo plugin which provides data synchronization with various social services.
 #%%{_libdir}/buteo-plugins-qt5/libsociald-client.so
 %config %{_sysconfdir}/buteo/profiles/client/sociald.xml
 %config %{_sysconfdir}/buteo/profiles/sync/sociald.All.xml
+%{_libdir}/libsyncpluginscommon.so.*
+%exclude %{_libdir}/libsyncpluginscommon.so
 %license COPYING
 
 %package facebook-calendars
@@ -613,19 +615,6 @@ Summary:    Translation source for sociald
 %defattr(-,root,root,-)
 %{_datadir}/translations/source/lipstick-jolla-home-twitter-notif.ts
 
-%package tests
-Summary:    Automatable tests for sociald
-BuildRequires:  pkgconfig(Qt5Test)
-Requires:   qt5-qtdeclarative-devel-tools
-Requires:   qt5-qtdeclarative-import-qttest
-
-%description tests
-%{summary}.
-
-%files tests
-%defattr(-,root,root,-)
-/opt/tests/sociald/*
-
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -639,8 +628,7 @@ Requires:   qt5-qtdeclarative-import-qttest
     "CONFIG+=twitter" \
     "CONFIG+=vk" \
     "CONFIG+=knowncontacts" \
-    "CONFIG+=calendar" \
-    "CONFIG+=build-tests"
+    "CONFIG+=calendar"
 make %{_smp_mflags}
 
 %pre
