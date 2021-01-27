@@ -57,6 +57,7 @@ const int COLLISION_ERROR_MAX_CONSECUTIVE = 8;
 const QByteArray VOLATILE_APP = QByteArrayLiteral("VOLATILE");
 const QByteArray VOLATILE_NAME = QByteArrayLiteral("SYNC-FAILURE");
 const QString ERROR_REASON_NON_ORGANIZER = QStringLiteral("forbiddenForNonOrganizer");
+const QString ERROR_REASON_UPDATE_MIN_TOO_OLD = QStringLiteral("updatedMinTooLongAgo");
 
 void errorDumpStr(const QString &str)
 {
@@ -1005,13 +1006,7 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
         if (!m_syncSucceeded) {
             SOCIALD_LOG_TRACE("Sync failed, configuring for next sync");
             // sync failed.  check to see if we need to apply any changes to the database.
-            QSet<QString> calendarsRequiringChange;
-            for (const QString &calendarId : m_timeMinFailure) {
-                calendarsRequiringChange.insert(calendarId);
-            }
-            for (const QString &calendarId : m_syncTokenFailure) {
-                calendarsRequiringChange.insert(calendarId);
-            }
+            const QSet<QString> calendarsRequiringChange = m_timeMinFailure + m_syncTokenFailure;
             const QDateTime yesterdayDate = QDateTime::currentDateTimeUtc().addDays(-1);
             for (const QString &calendarId : calendarsRequiringChange) {
                 // this codepath is hit if the server replied with HTTP 410 for the sync token or timeMin value.
@@ -1420,12 +1415,12 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
         // Note: if the syncDate is valid, that should be because we previously
         // suffered from a 410 error due to the timeMin value being too long ago,
         // and we detected that case and wrote the next sync date value to use here.
-        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"),
-                                                  syncDate.isValid()
-                                                        ? syncDate.toString(Qt::ISODate)
-                                                        : QDateTime::currentDateTimeUtc().addYears(-1).toString(Qt::ISODate)));
-        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMax"),
-                                                  QDateTime::currentDateTimeUtc().addYears(2).toString(Qt::ISODate)));
+        const QDateTime clampMin = QDateTime::currentDateTimeUtc().addYears(-1);
+        const QDateTime timeMin = (!syncDate.isValid() || (syncDate < clampMin)) ? clampMin : syncDate;
+        const QDateTime timeMax = QDateTime::currentDateTimeUtc().addYears(2);
+
+        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"), timeMin.toString(Qt::ISODate)));
+        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMax"), timeMax.toString(Qt::ISODate)));
     }
     if (!pageToken.isEmpty()) { // continuation request
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("pageToken"), pageToken));
@@ -1535,10 +1530,10 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
         if (httpCode == 410) {
             // HTTP 410 GONE is emitted if the syncToken or timeMin parameters are invalid.
             // We should trigger a clean sync with this notebook if we hit this error.
-            // However, don't mark sync as failed, or that will prevent the empty nextSyncToken from being written.
-            SOCIALD_LOG_ERROR("received 410 GONE from server; marking calendar" << calendarId << "from account" << m_accountId << "for clean sync");
+            const QString reason = getErrorReason(replyData);
+            SOCIALD_LOG_ERROR("received 410 GONE" << reason << "from server; marking calendar" << calendarId << "from account" << m_accountId << "for clean sync");
             nextSyncToken.clear();
-            if (syncToken.isEmpty()) {
+            if (reason == ERROR_REASON_UPDATE_MIN_TOO_OLD) {
                 m_timeMinFailure.insert(calendarId);
             } else {
                 m_syncTokenFailure.insert(calendarId);
