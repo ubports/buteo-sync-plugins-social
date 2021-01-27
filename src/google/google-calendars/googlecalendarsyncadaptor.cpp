@@ -1285,7 +1285,6 @@ void GoogleCalendarSyncAdaptor::calendarsFinishedHandler()
     decrementSemaphore(m_accountId);
 }
 
-
 void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebooks(const QString &accessToken, bool needCleanSync)
 {
     if (syncAborted()) {
@@ -1314,7 +1313,11 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebooks(const QString &acce
                 }
 
                 // check to see if we need to perform a clean sync cycle with this notebook.
-                if (needCleanSync) {
+                // if the sync token is empty and the syncTime is invalid, perform a clean sync anyway
+                const bool effectiveCleanSync = (notebookNextSyncToken.isEmpty()
+                                                 && (!notebook->syncDate().isValid()
+                                                     || notebook->syncDate().toMSecsSinceEpoch() == 0));
+                if (needCleanSync || effectiveCleanSync) {
                     // we are performing a clean sync cycle.
                     // we will eventually delete and then insert this notebook.
                     SOCIALD_LOG_DEBUG("queueing clean sync of local calendar" << notebook->name()
@@ -1364,7 +1367,7 @@ void GoogleCalendarSyncAdaptor::updateLocalCalendarNotebooks(const QString &acce
     SOCIALD_LOG_DEBUG("Syncing calendar events for Google account: " << m_accountId << " CleanSync: " << needCleanSync);
 
     foreach (const QString &calendarId, calendars.keys()) {
-        const QString syncToken = needCleanSync ? QString() : serverCalendarIdToSyncToken.value(calendarId);
+        const QString syncToken = isCleanSync(calendarId) ? QString() : serverCalendarIdToSyncToken.value(calendarId);
         requestEvents(accessToken, calendarId, syncToken);
         m_calendarsBeingRequested.append(calendarId);
     }
@@ -1389,8 +1392,8 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
     // for a notebook, as it implements the SQL query using an inequality on both modifiedAfter
     // and createdBefore; so instead we have to build a datetime which "should" satisfy
     // the inequality for all possible local modifications detectable since the last sync.
-    const QDateTime syncDate = notebook ? notebook->syncDate().addSecs(1) : QDateTime();
-    bool needCleanSync = syncToken.isEmpty() || syncDate.isNull() || !syncDate.isValid();
+    QDateTime syncDate = notebook ? notebook->syncDate().addSecs(1) : QDateTime();
+    const bool needCleanSync = isCleanSync(calendarId);
 
     if (!needCleanSync) {
         SOCIALD_LOG_DEBUG("Previous sync time for Google account:" << m_accountId <<
@@ -1401,6 +1404,7 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
         SOCIALD_LOG_DEBUG("Clean sync required for Google account:" << m_accountId <<
                           "Calendar Id:" << calendarId <<
                           "- Ignoring last sync time:" << syncDate.toString());
+        syncDate = QDateTime();
     } else {
         SOCIALD_LOG_DEBUG("Invalid previous sync time for Google account:" << m_accountId <<
                           "Calendar Id:" << calendarId <<
@@ -1416,10 +1420,10 @@ void GoogleCalendarSyncAdaptor::requestEvents(const QString &accessToken, const 
         // suffered from a 410 error due to the timeMin value being too long ago,
         // and we detected that case and wrote the next sync date value to use here.
         const QDateTime clampMin = QDateTime::currentDateTimeUtc().addYears(-1);
-        const QDateTime timeMin = (!syncDate.isValid() || (syncDate < clampMin)) ? clampMin : syncDate;
         const QDateTime timeMax = QDateTime::currentDateTimeUtc().addYears(2);
+        syncDate = (!syncDate.isValid() || (syncDate < clampMin)) ? clampMin : syncDate;
 
-        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"), timeMin.toString(Qt::ISODate)));
+        queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMin"), syncDate.toString(Qt::ISODate)));
         queryItems.append(QPair<QString, QString>(QString::fromLatin1("timeMax"), timeMax.toString(Qt::ISODate)));
     }
     if (!pageToken.isEmpty()) { // continuation request
@@ -1549,7 +1553,7 @@ void GoogleCalendarSyncAdaptor::eventsFinishedHandler()
         // we've finished loading all pages of event information
         // we now need to process the loaded information to determine
         // which events need to be added/updated/removed locally.
-        finishedRequestingRemoteEvents(accessToken, calendarId, syncToken, nextSyncToken, syncToken.isEmpty() ? QDateTime() : since);
+        finishedRequestingRemoteEvents(accessToken, calendarId, syncToken, nextSyncToken, since);
     }
 
     // we're finished this request.  Decrement our busy semaphore.
@@ -1697,96 +1701,97 @@ QList<GoogleCalendarSyncAdaptor::UpsyncChange> GoogleCalendarSyncAdaptor::determ
     QMap<QString, QPair<QString, QDateTime> > deletedMap; // gcalId to incidenceUid,recurrenceId
     QSet<QString> cleanSyncDeletionAdditions; // gcalIds
 
-    if (since.isValid() && !googleNotebook.isNull()) {
-        // delta sync.  populate our lists of local changes.
+    if (!isCleanSync(calendarId) && !googleNotebook.isNull()) {
+        // delta sync, not a clean sync. populate our lists of local changes.
         SOCIALD_LOG_TRACE("Loading existing data given delta sync method");
+        m_storage->loadNotebookIncidences(googleNotebook->uid());
+        m_storage->allIncidences(&allList, googleNotebook->uid());
+        m_storage->insertedIncidences(&addedList, QDateTime(since), googleNotebook->uid());
+        m_storage->modifiedIncidences(&updatedList, QDateTime(since), googleNotebook->uid());
+
+        // mkcal's implementation of deletedIncidences() is unusual.  It returns any event
+        // which was deleted after the second (datetime) parameter, IF AND ONLY IF
+        // it was created before that same datetime.
+        // Unfortunately, mkcal also only supports second-resolution datetimes, which means
+        // that the "last sync timestamp" cannot effectively be used as the parameter, since
+        // any events which were added to the database due to the previous sync cycle
+        // will (most likely) have been added within 1 second of the sync anchor timestamp.
+        // To work around this, we need to retrieve deleted incidences twice, and unite them.
+        m_storage->deletedIncidences(&deletedList, QDateTime(since), googleNotebook->uid());
+        m_storage->deletedIncidences(&extraDeletedList, QDateTime(since).addSecs(1), googleNotebook->uid());
+        uniteIncidenceLists(extraDeletedList, &deletedList);
+
+        Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, allList) {
+            if (incidence.isNull()) {
+                SOCIALD_LOG_DEBUG("Ignoring null incidence returned from allIncidences()");
+                continue;
+            }
+            KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
+            QString gcalId = gCalEventId(incidence);
+            if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
+                // partially upsynced artifact.  It may need to be updated with gcalId comment field.
+                gcalId = upsyncedUidMapping.value(incidence->uid());
+                partialUpsyncArtifactsNeedingUpdate.insert(gcalId);
+            }
+            if (gcalId.size() && eventPtr) {
+                SOCIALD_LOG_TRACE("Have local event:" << gcalId << "," << eventPtr->uid() << ":" << eventPtr->recurrenceId().toString());
+                allMap.insert(gcalId, eventPtr);
+            } // else, newly added locally, no gcalId yet.
+        }
+
+        Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, updatedList) {
+            if (incidence.isNull()) {
+                SOCIALD_LOG_DEBUG("Ignoring null incidence returned from modifiedIncidences()");
+                continue;
+            }
+            KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
+            QString gcalId = gCalEventId(incidence);
+            if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
+                // TODO: can this codepath be hit?  If it was a partial upsync artifact,
+                //       shouldn't it be reported as a local+remote addition, not local modification?
+                // partially upsynced artifact
+                gcalId = upsyncedUidMapping.value(incidence->uid());
+                partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // will already update due to local change.
+            }
+            if (gcalId.size() && eventPtr) {
+                SOCIALD_LOG_DEBUG("Have local modification:" << incidence->uid() << "in" << calendarId);
+                updatedMap.insert(gcalId, eventPtr);
+            } // else, newly added+updated locally, no gcalId yet.
+        }
+        Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, deletedList) {
+            if (incidence.isNull()) {
+                SOCIALD_LOG_DEBUG("Ignoring null incidence returned from deletedIncidences()");
+                continue;
+            }
+            QString gcalId = gCalEventId(incidence);
+            if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
+                // TODO: can this codepath be hit?  If it was a partial upsync artifact,
+                //       shouldn't it be reported as a local+remote addition, not local deletion?
+                // partially upsynced artifact
+                gcalId = upsyncedUidMapping.value(incidence->uid());
+                partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // doesn't need update due to deletion.
+            }
+            if (gcalId.size()) {
+                // Now we check to see whether this event was deleted due to a clean-sync (notebook removal).
+                // If so, then another event (with the same gcalId association) should have been ADDED at the
+                // same time, to fulfil clean-sync semantics (because the notebook uid is maintained).
+                // If so, we treat it as a modification rather than delete+add pair.
+                if (allMap.contains(gcalId)) {
+                    // note: this works because gcalId is different for base series vs persistent occurrence of series.
+                    SOCIALD_LOG_DEBUG("Have local deletion+addition from cleansync:" << gcalId << "in" << calendarId);
+                    cleanSyncDeletionAdditions.insert(gcalId);
+                } else {
+                    // otherwise, it's a real local deletion.
+                    SOCIALD_LOG_DEBUG("Have local deletion:" << incidence->uid() << "in" << calendarId);
+                    deletedMap.insert(gcalId, qMakePair(incidence->uid(), incidence->recurrenceId()));
+                    updatedMap.remove(gcalId); // don't upsync updates to deleted events.
+                    m_deletedGcalIdToIncidence.insert(gcalId, incidence);
+                }
+            } // else, newly added+deleted locally, no gcalId yet.
+        }
+    } else {
         if (googleNotebook.isNull()) {
             SOCIALD_LOG_TRACE("No local notebook exists for remote; no existing data to load.");
-        } else {
-            m_storage->loadNotebookIncidences(googleNotebook->uid());
-            m_storage->allIncidences(&allList, googleNotebook->uid());
-            m_storage->insertedIncidences(&addedList, QDateTime(since), googleNotebook->uid());
-            m_storage->modifiedIncidences(&updatedList, QDateTime(since), googleNotebook->uid());
-
-            // mkcal's implementation of deletedIncidences() is unusual.  It returns any event
-            // which was deleted after the second (datetime) parameter, IF AND ONLY IF
-            // it was created before that same datetime.
-            // Unfortunately, mkcal also only supports second-resolution datetimes, which means
-            // that the "last sync timestamp" cannot effectively be used as the parameter, since
-            // any events which were added to the database due to the previous sync cycle
-            // will (most likely) have been added within 1 second of the sync anchor timestamp.
-            // To work around this, we need to retrieve deleted incidences twice, and unite them.
-            m_storage->deletedIncidences(&deletedList, QDateTime(since), googleNotebook->uid());
-            m_storage->deletedIncidences(&extraDeletedList, QDateTime(since).addSecs(1), googleNotebook->uid());
-            uniteIncidenceLists(extraDeletedList, &deletedList);
-
-            Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, allList) {
-                if (incidence.isNull()) {
-                    SOCIALD_LOG_DEBUG("Ignoring null incidence returned from allIncidences()");
-                    continue;
-                }
-                KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
-                QString gcalId = gCalEventId(incidence);
-                if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
-                    // partially upsynced artifact.  It may need to be updated with gcalId comment field.
-                    gcalId = upsyncedUidMapping.value(incidence->uid());
-                    partialUpsyncArtifactsNeedingUpdate.insert(gcalId);
-                }
-                if (gcalId.size() && eventPtr) {
-                    SOCIALD_LOG_TRACE("Have local event:" << gcalId << "," << eventPtr->uid() << ":" << eventPtr->recurrenceId().toString());
-                    allMap.insert(gcalId, eventPtr);
-                } // else, newly added locally, no gcalId yet.
-            }
-            Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, updatedList) {
-                if (incidence.isNull()) {
-                    SOCIALD_LOG_DEBUG("Ignoring null incidence returned from modifiedIncidences()");
-                    continue;
-                }
-                KCalendarCore::Event::Ptr eventPtr = m_calendar->event(incidence->uid(), incidence->recurrenceId());
-                QString gcalId = gCalEventId(incidence);
-                if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
-                    // TODO: can this codepath be hit?  If it was a partial upsync artifact,
-                    //       shouldn't it be reported as a local+remote addition, not local modification?
-                    // partially upsynced artifact
-                    gcalId = upsyncedUidMapping.value(incidence->uid());
-                    partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // will already update due to local change.
-                }
-                if (gcalId.size() && eventPtr) {
-                    SOCIALD_LOG_DEBUG("Have local modification:" << incidence->uid() << "in" << calendarId);
-                    updatedMap.insert(gcalId, eventPtr);
-                } // else, newly added+updated locally, no gcalId yet.
-            }
-            Q_FOREACH(const KCalendarCore::Incidence::Ptr incidence, deletedList) {
-                if (incidence.isNull()) {
-                    SOCIALD_LOG_DEBUG("Ignoring null incidence returned from deletedIncidences()");
-                    continue;
-                }
-                QString gcalId = gCalEventId(incidence);
-                if (gcalId.isEmpty() && upsyncedUidMapping.contains(incidence->uid())) {
-                    // TODO: can this codepath be hit?  If it was a partial upsync artifact,
-                    //       shouldn't it be reported as a local+remote addition, not local deletion?
-                    // partially upsynced artifact
-                    gcalId = upsyncedUidMapping.value(incidence->uid());
-                    partialUpsyncArtifactsNeedingUpdate.remove(gcalId); // doesn't need update due to deletion.
-                }
-                if (gcalId.size()) {
-                    // Now we check to see whether this event was deleted due to a clean-sync (notebook removal).
-                    // If so, then another event (with the same gcalId association) should have been ADDED at the
-                    // same time, to fulfil clean-sync semantics (because the notebook uid is maintained).
-                    // If so, we treat it as a modification rather than delete+add pair.
-                    if (allMap.contains(gcalId)) {
-                        // note: this works because gcalId is different for base series vs persistent occurrence of series.
-                        SOCIALD_LOG_DEBUG("Have local deletion+addition from cleansync:" << gcalId << "in" << calendarId);
-                        cleanSyncDeletionAdditions.insert(gcalId);
-                    } else {
-                        // otherwise, it's a real local deletion.
-                        SOCIALD_LOG_DEBUG("Have local deletion:" << incidence->uid() << "in" << calendarId);
-                        deletedMap.insert(gcalId, qMakePair(incidence->uid(), incidence->recurrenceId()));
-                        updatedMap.remove(gcalId); // don't upsync updates to deleted events.
-                        m_deletedGcalIdToIncidence.insert(gcalId, incidence);
-                    }
-                } // else, newly added+deleted locally, no gcalId yet.
-            }
         }
     }
 
@@ -2895,6 +2900,15 @@ void GoogleCalendarSyncAdaptor::clampEventTimeToSync(KCalendarCore::Event::Ptr e
         if (event->lastModified() > m_syncedDateTime) {
             event->setLastModified(event->created());
         }
+    }
+}
+
+bool GoogleCalendarSyncAdaptor::isCleanSync(const QString &calendarId) const
+{
+    if (m_serverCalendarIdToCalendarInfo.contains(calendarId)) {
+        return (m_serverCalendarIdToCalendarInfo[calendarId].change == GoogleCalendarSyncAdaptor::CleanSync);
+    } else {
+        return false;
     }
 }
 

@@ -119,6 +119,7 @@ private:
                                         const QString &calendarId, const QString &syncToken,
                                         const QString &nextSyncToken, const QDateTime &since);
     void clampEventTimeToSync(KCalendarCore::Event::Ptr event) const;
+    bool isCleanSync(const QString &calendarId) const;
 
     static void setCalendarProperties(mKCal::Notebook::Ptr notebook,
                                       const CalendarInfo &calendarInfo,
