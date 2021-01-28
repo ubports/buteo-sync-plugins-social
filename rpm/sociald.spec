@@ -1,5 +1,5 @@
-Name:       sociald
-Summary:    Syncs device data from social services
+Name:       buteo-sync-plugins-social
+Summary:    Sync plugins for social services
 Version:    0.4.0
 Release:    1
 License:    LGPLv2
@@ -27,6 +27,8 @@ Requires: buteo-syncfw-qt5-msyncd
 Requires: systemd
 Requires(pre):  sailfish-setup
 Requires(post): systemd
+Obsoletes: sociald < 0.4.0
+Provides: sociald
 
 %description
 A Buteo plugin which provides data synchronization with various social services.
@@ -46,12 +48,12 @@ A Buteo plugin which provides data synchronization with various social services.
 %package facebook
 Summary:    Provides synchronisation with Facebook
 Requires: %{name} = %{version}-%{release}
-Obsoletes: %{name}-facebook-calendars <= 3.19
-Obsoletes: %{name}-facebook-images <= 3.19
-Obsoletes: %{name}-facebook-signon <= 3.19
-Provides: %{name}-facebook-calendars
-Provides: %{name}-facebook-images
-Provides: %{name}-facebook-signon
+Obsoletes: sociald-facebook-calendars < 0.4.0
+Obsoletes: sociald-facebook-images < 0.4.0
+Obsoletes: sociald-facebook-signon < 0.4.0
+Provides: sociald-facebook-calendars
+Provides: sociald-facebook-images
+Provides: sociald-facebook-signon
 
 %description facebook
 %{summary}.
@@ -108,12 +110,12 @@ systemctl-user try-restart msyncd.service || :
 %package google
 Summary:    Provides synchronisation with Google
 Requires: %{name} = %{version}-%{release}
-Obsoletes: %{name}-google-calendars <= 3.19
-Obsoletes: %{name}-google-contacts <= 3.19
-Obsoletes: %{name}-google-signon <= 3.19
-Provides: %{name}-google-calendars
-Provides: %{name}-google-contacts
-Provides: %{name}-google-signon
+Obsoletes: sociald-google-calendars < 0.4.0
+Obsoletes: sociald-google-contacts < 0.4.0
+Obsoletes: sociald-google-signon < 0.4.0
+Provides: sociald-google-calendars
+Provides: sociald-google-contacts
+Provides: sociald-google-signon
 
 
 %description google
@@ -168,10 +170,10 @@ done
 %package twitter
 Summary:    Provides synchronisation with Twitter
 Requires: %{name} = %{version}-%{release}
-Obsoletes: %{name}-twitter-notifications <= 3.19
-Obsoletes: %{name}-twitter-posts <= 3.19
-Provides: %{name}-twitter-notifications
-Provides: %{name}-twitter-posts
+Obsoletes: sociald-twitter-notifications < 0.4.0
+Obsoletes: sociald-twitter-posts < 0.4.0
+Provides: sociald-twitter-notifications
+Provides: sociald-twitter-posts
 
 %description twitter
 %{summary}.
@@ -214,12 +216,12 @@ systemctl-user try-restart msyncd.service || :
 %package onedrive
 Summary:    Provides synchronisation with OneDrive
 Requires: %{name} = %{version}-%{release}
-Obsoletes: %{name}-onedrive-signon <= 3.19
-Obsoletes: %{name}-onedrive-images <= 3.19
-Obsoletes: %{name}-onedrive-backup <= 3.19
-Provides: %{name}-onedrive-signon
-Provides: %{name}-onedrive-images
-Provides: %{name}-onedrive-backup
+Obsoletes: sociald-onedrive-signon < 0.4.0
+Obsoletes: sociald-onedrive-images < 0.4.0
+Obsoletes: sociald-onedrive-backup < 0.4.0
+Provides: sociald-onedrive-signon
+Provides: sociald-onedrive-images
+Provides: sociald-onedrive-backup
 
 %description onedrive
 %{summary}.
@@ -287,16 +289,16 @@ systemctl-user try-restart msyncd.service || :
 %package vk
 Summary:    Provides synchronisation with VK
 Requires: %{name} = %{version}-%{release}
-Obsoletes: %{name}-vk-posts <= 3.19
-Obsoletes: %{name}-vk-notifications <= 3.19
-Obsoletes: %{name}-vk-calendars <= 3.19
-Obsoletes: %{name}-vk-contacts <= 3.19
-Obsoletes: %{name}-vk-images <= 3.19
-Provides: %{name}-vk-posts
-Provides: %{name}-vk-notifications
-Provides: %{name}-vk-calendars
-Provides: %{name}-vk-contacts
-Provides: %{name}-vk-images
+Obsoletes: sociald-vk-posts < 0.4.0
+Obsoletes: sociald-vk-notifications < 0.4.0
+Obsoletes: sociald-vk-calendars < 0.4.0
+Obsoletes: sociald-vk-contacts < 0.4.0
+Obsoletes: sociald-vk-images < 0.4.0
+Provides: sociald-vk-posts
+Provides: sociald-vk-notifications
+Provides: sociald-vk-calendars
+Provides: sociald-vk-contacts
+Provides: sociald-vk-images
 
 %description vk
 %{summary}.
@@ -380,10 +382,10 @@ systemctl-user restart msyncd.service || :
 %package dropbox
 Summary:    Provides synchronisation with Dropbox
 Requires: %{name} = %{version}-%{release}
-Obsoletes: %{name}-dropbox-images <= 3.19
-Obsoletes: %{name}-dropbox-backup <= 3.19
-Provides: %{name}-dropbox-images
-Provides: %{name}-dropbox-backup
+Obsoletes: sociald-dropbox-images < 0.4.0
+Obsoletes: sociald-dropbox-backup < 0.4.0
+Provides: sociald-dropbox-images
+Provides: sociald-dropbox-backup
 
 %description dropbox
 %{summary}.
@@ -437,6 +439,9 @@ systemctl-user try-restart msyncd.service || :
 
 %package knowncontacts
 Summary: Store locally created contacts
+Requires: %{name} = %{version}-%{release}
+Obsoletes: sociald-knowncontacts < 0.4.0
+Provides: sociald-knowncontacts
 
 %description knowncontacts
 Buteo sync plugin that stores locally created contacts, such as email
