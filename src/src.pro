@@ -1,11 +1,41 @@
 TEMPLATE = subdirs
 SUBDIRS = \
+    common \
     sociald
 
-CONFIG(google): SUBDIRS += google
-CONFIG(facebook): SUBDIRS += facebook
-CONFIG(twitter): SUBDIRS += twitter
-CONFIG(onedrive): SUBDIRS += onedrive
-CONFIG(dropbox): SUBDIRS += dropbox
-CONFIG(vk): SUBDIRS += vk
-CONFIG(knowncontacts): SUBDIRS += knowncontacts
+sociald.depends = common
+
+CONFIG(google): {
+    SUBDIRS += google
+    google.depends = common
+}
+
+CONFIG(facebook): {
+    SUBDIRS += facebook
+    facebook.depends = common
+}
+
+CONFIG(twitter): {
+    SUBDIRS += twitter
+    twitter.depends = common
+}
+
+CONFIG(onedrive): {
+    SUBDIRS += onedrive
+    onedrive.depends = common
+}
+
+CONFIG(dropbox): {
+    SUBDIRS += dropbox
+    dropbox.depends = common
+}
+
+CONFIG(vk): {
+    SUBDIRS += vk
+    vk.depends = common
+}
+
+CONFIG(knowncontacts): {
+    SUBDIRS += knowncontacts
+    knowncontacts.depends = common
+}
