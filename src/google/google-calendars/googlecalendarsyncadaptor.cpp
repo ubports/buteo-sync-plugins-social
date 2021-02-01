@@ -1117,7 +1117,7 @@ void GoogleCalendarSyncAdaptor::finalCleanup()
         if (foundOrphans == 0) {
             setGhostEventCleanupPerformed();
             SOCIALD_LOG_INFO("orphan cleanup completed without finding orphans!");
-        } else if (m_storage->save()) {
+        } else if (m_storage->save(mKCal::ExtendedStorage::PurgeDeleted)) {
             setGhostEventCleanupPerformed();
             SOCIALD_LOG_INFO("orphan cleanup deleted" << foundOrphans << "; storage save completed!");
         } else {
