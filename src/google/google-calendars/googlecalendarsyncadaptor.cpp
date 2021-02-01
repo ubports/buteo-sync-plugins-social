@@ -385,8 +385,16 @@ QJsonArray recurrenceArray(KCalendarCore::Event::Ptr event, KCalendarCore::ICalF
 
 QDateTime parseRecurrenceId(const QJsonObject &originalStartTime)
 {
-    QString recurrenceIdStr = originalStartTime.value(QLatin1String("dateTime")).toVariant().toString();
-    QString recurrenceIdTzStr = originalStartTime.value(QLatin1String("timeZone")).toVariant().toString();
+    QString recurrenceIdStr;
+    QString recurrenceIdTzStr;
+
+    if (originalStartTime.contains(QLatin1String("date"))) {
+        recurrenceIdStr = originalStartTime.value(QLatin1String("date")).toVariant().toString();
+    } else {
+        recurrenceIdStr = originalStartTime.value(QLatin1String("dateTime")).toVariant().toString();
+        recurrenceIdTzStr = originalStartTime.value(QLatin1String("timeZone")).toVariant().toString();
+    }
+
     QDateTime recurrenceId = QDateTime::fromString(recurrenceIdStr, Qt::ISODate);
     if (!recurrenceIdTzStr.isEmpty()) {
         recurrenceId = recurrenceId.toTimeZone(QTimeZone(recurrenceIdTzStr.toLatin1()));
@@ -2622,9 +2630,17 @@ bool GoogleCalendarSyncAdaptor::applyRemoteDeleteOccurence(const QString &eventI
     SOCIALD_LOG_DEBUG("Occurrence deleted remotely:" << eventId << "for recurrenceId:" << recurrenceId.toString());
     KCalendarCore::Event::Ptr event = allLocalEventsMap.value(parentId);
     if (event) {
-        event->startUpdates();
-        event->recurrence()->addExDateTime(recurrenceId);
-        event->endUpdates();
+        if (recurrenceId.isValid()) {
+            event->startUpdates();
+            if (event->allDay()) {
+                event->recurrence()->addExDate(recurrenceId.date());
+            } else {
+                event->recurrence()->addExDateTime(recurrenceId);
+            }
+            event->endUpdates();
+        } else {
+            flagDeleteFailure(event->uid());
+        }
     } else {
         // The parent event should never be null by this point, but we guard against it just in case
         SOCIALD_LOG_ERROR("Deletion failed as the parent event" << parentId << "couldn't be found");
