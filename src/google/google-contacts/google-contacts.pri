@@ -4,14 +4,14 @@ QT += gui
 
 SOURCES += \
     $$PWD/googletwowaycontactsyncadaptor.cpp \
-    $$PWD/googlecontactstream.cpp \
-    $$PWD/googlecontactatom.cpp \
+    $$PWD/googlepeopleapi.cpp \
+    $$PWD/googlepeoplejson.cpp \
     $$PWD/googlecontactimagedownloader.cpp
 
 HEADERS += \
     $$PWD/googletwowaycontactsyncadaptor.h \
-    $$PWD/googlecontactstream.h \
-    $$PWD/googlecontactatom.h \
+    $$PWD/googlepeopleapi.h \
+    $$PWD/googlepeoplejson.h \
     $$PWD/googlecontactimagedownloader.h
 
 INCLUDEPATH += $$PWD
