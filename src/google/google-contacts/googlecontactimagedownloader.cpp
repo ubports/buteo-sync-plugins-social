@@ -45,7 +45,6 @@ QNetworkReply * GoogleContactImageDownloader::createReply(const QString &url,
 
     QString accessToken = metadata.value(IMAGE_DOWNLOADER_TOKEN_KEY).toString();
     QNetworkRequest request(url);
-    request.setRawHeader("GData-Version", "3.0");
     request.setRawHeader(QString(QLatin1String("Authorization")).toUtf8(),
                          QString(QLatin1String("Bearer ") + accessToken).toUtf8());
     return d->networkAccessManager->get(request);

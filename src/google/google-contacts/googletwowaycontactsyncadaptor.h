@@ -23,7 +23,7 @@
 #define GOOGLETWOWAYCONTACTSYNCADAPTOR_H
 
 #include "googledatatypesyncadaptor.h"
-#include "googlecontactstream.h"
+#include "googlepeopleapi.h"
 
 #include <twowaycontactsyncadaptor.h>
 
@@ -46,7 +46,7 @@ public:
     GoogleContactSqliteSyncAdaptor(int accountId, GoogleTwoWayContactSyncAdaptor *parent);
    ~GoogleContactSqliteSyncAdaptor();
 
-    int accountId() const;
+    bool isLocallyDeletedGuid(const QString &guid) const;
 
     virtual bool determineRemoteCollections() override;
     virtual bool deleteRemoteCollection(const QContactCollection &collection) override;
@@ -71,12 +71,8 @@ public:
     virtual void syncFinishedSuccessfully() override;
     virtual void syncFinishedWithError() override;
 
-    QContactCollection m_collection;
-    QDateTime m_syncDateTime;
-
 private:
     GoogleTwoWayContactSyncAdaptor *q;
-    int m_accountId = 0;
 };
 
 class GoogleTwoWayContactSyncAdaptor : public GoogleDataTypeSyncAdaptor
@@ -101,91 +97,82 @@ public:
     virtual QString syncServiceName() const override;
     virtual void sync(const QString &dataTypeString, int accountId) override;
 
-    void requestData(int accountId,
-                     int startIndex,
-                     const QString &continuationRequest,
-                     const QDateTime &syncTimestamp,
-                     DataRequestType requestType,
-                     ContactChangeNotifier contactChangeNotifier = NoContactChangeNotifier);
-    void upsyncLocalChanges(const QDateTime &localSince,
-                            const QList<QContact> &locallyAdded,
+    void requestData(DataRequestType requestType,
+                     ContactChangeNotifier contactChangeNotifier = NoContactChangeNotifier,
+                     const QString &pageToken = QString());
+    void upsyncLocalChanges(const QList<QContact> &locallyAdded,
                             const QList<QContact> &locallyModified,
-                            const QList<QContact> &locallyDeleted,
-                            int accountId);
+                            const QList<QContact> &locallyDeleted);
 
-    void downloadAvatars(int accountId);
-
-    QContactManager *m_contactManager = nullptr;
+    void syncFinished();
 
 protected:
     // implementing GoogleDataTypeSyncAdaptor interface
-    void purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode mode);
-    void beginSync(int accountId, const QString &accessToken);
-    void finalize(int accountId);
-    void finalCleanup();
+    void purgeDataForOldAccount(int oldId, SocialNetworkSyncAdaptor::PurgeMode mode) override;
+    void beginSync(int accountId, const QString &accessToken) override;
+    void finalize(int accountId) override;
+    void finalCleanup() override;
 
 private:
+    friend class GoogleContactSqliteSyncAdaptor;
+
     class BatchedUpdate
     {
     public:
-        QMultiMap<GoogleContactStream::UpdateType, QPair<QContact, QStringList> > batch;
+        QMap<GooglePeopleApi::OperationType, QList<QContact> > batch;
         int batchCount = 0;
     };
 
-    void determineRemoteChanges(const QDateTime &remoteSince, int accountId);
     void groupsFinishedHandler();
     void contactsFinishedHandler();
-    void continueSync(int accountId,
-                      const QString &accessToken,
-                      GoogleTwoWayContactSyncAdaptor::ContactChangeNotifier contactChangeNotifier);
-    void upsyncLocalChangesList(int accountId);
-    bool batchRemoteChanges(int accountId, BatchedUpdate *batchedUpdate,
-                            QList<QContact> *contacts, GoogleContactStream::UpdateType updateType);
-    void storeToRemote(int accountId,
-                       const QString &accessToken,
-                       const QByteArray &encodedContactUpdates);
-    void queueOutstandingAvatars(int accountId, const QString &accessToken);
-    bool queueAvatarForDownload(int accountId, const QString &accessToken, const QString &contactGuid, const QString &imageUrl);
-    void transformContactAvatars(QList<QContact> &remoteContacts, int accountId, const QString &accessToken);
-    void downloadContactAvatarImage(int accountId, const QString &accessToken, const QUrl &imageUrl, const QString &filename);
+    void continueSync(GoogleTwoWayContactSyncAdaptor::ContactChangeNotifier contactChangeNotifier);
+    void upsyncLocalChangesList();
+    bool batchRemoteChanges(BatchedUpdate *batchedUpdate,
+                            QList<QContact> *contacts,
+                            GooglePeopleApi::OperationType updateType);
+    void storeToRemote(const QByteArray &encodedContactUpdates);
+    void queueOutstandingAvatars();
+    bool queueAvatarForDownload(const QString &contactGuid, const QString &imageUrl);
+    bool addAvatarToDownload(QContact *contact);
     void imageDownloaded(const QString &url, const QString &path, const QVariantMap &metadata);
-
     void loadCollection(const QContactCollection &collection);
 
     void purgeAccount(int pid);
     void postFinishedHandler();
     void postErrorHandler();
 
-    struct ContactUpsyncResponse {
-        QStringList unsupportedElements;
-        QString guid;
-        QString etag;
-    };
+    QList<QContact> m_remoteAdds;
+    QList<QContact> m_remoteMods;
+    QList<QContact> m_remoteDels;
+    QList<QContact> m_localAdds;
+    QList<QContact> m_localMods;
+    QList<QContact> m_localDels;
+    QList<QContact> m_localAvatarAdds;
+    QList<QContact> m_localAvatarMods;
+    QList<QContact> m_localAvatarDels;
 
+    QHash<QString, QString> m_contactEtags; // contact guid -> contact etag
+    QHash<QString, QString> m_contactIds; // contact guid -> contact id
+    QHash<QString, QString> m_contactAvatars; // contact guid -> remote avatar path
+    QHash<QString, QPair<QString,QString> > m_previousAvatarUrls;
+    QHash<GooglePeopleApi::OperationType, int> m_batchUpdateIndexes;
+    QHash<QString, QString> m_queuedAvatarsForDownload; // contact guid -> remote avatar path
+
+    QContactManager *m_contactManager = nullptr;
+    GoogleContactSqliteSyncAdaptor *m_sqliteSync = nullptr;
     GoogleContactImageDownloader *m_workerObject = nullptr;
 
-    QMap<int, GoogleContactSqliteSyncAdaptor *> m_sqliteSync;
-    QMap<int, QString> m_accessTokens;
-    QMap<int, QString> m_emailAddresses;
+    QContactCollection m_collection;
+    QString m_accessToken;
 
-    QMap<int, QList<QContact> > m_remoteAdds;
-    QMap<int, QList<QContact> > m_remoteMods;
-    QMap<int, QList<QContact> > m_remoteDels;
-    QMap<int, QList<QContact> > m_localAdds;
-    QMap<int, QList<QContact> > m_localMods;
-    QMap<int, QList<QContact> > m_localDels;
+    struct PeopleConnectionsListParameters {
+        bool requestSyncToken;
+        QString syncToken;
+        QString personFields;
+    } m_connectionsListParams;
 
-    QMap<int, QMap<QString, QString> > m_contactEtags; // contact guid -> contact etag
-    QMap<int, QMap<QString, QString> > m_contactIds; // contact guid -> contact id
-    QMap<int, QMap<QString, QString> > m_contactAvatars; // contact guid -> remote avatar path
-    QMap<int, QMap<QString, QString> > m_avatarEtags;
-    QMap<int, QMap<QString, QString> > m_avatarImageUrls;
-    QMap<int, QMap<QString, ContactUpsyncResponse> > m_contactUpsyncResponses; // contact id -> response info
-    QMap<int, QMap<GoogleContactStream::UpdateType, int> > m_batchUpdateIndexes;
-
-    QMap<int, int> m_apiRequestsRemaining;
-    QMap<int, QMap<QString, QString> > m_queuedAvatarsForDownload; // contact guid -> remote avatar path
-
+    int m_accountId = 0;
+    int m_apiRequestsRemaining = 0;
     bool m_allowFinalCleanup = false;
 };
 
