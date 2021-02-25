@@ -38,6 +38,7 @@
 #include <QContactGuid>
 #include <QContactNickname>
 #include <QContactDisplayLabel>
+#include <QContactFavorite>
 #include <QFile>
 
 #include <QCoreApplication>
@@ -47,6 +48,8 @@
 
 
 namespace {
+
+static const QString StarredContactGroupName = QStringLiteral("contactGroups/starred");
 
 QDate jsonObjectToDate(const QJsonObject &object)
 {
@@ -533,6 +536,7 @@ bool GooglePeople::Membership::saveContactDetails(
     contact->setCollectionId(QContactCollectionId());
 
     QStringList contactGroupResourceNames;
+    bool isFavorite = false;
     for (const Membership &membership : values) {
         if (contact->collectionId().isNull()) {
             for (const QContactCollection &collection : candidateCollections) {
@@ -542,8 +546,17 @@ bool GooglePeople::Membership::saveContactDetails(
                 }
             }
         }
+        if (membership.contactGroupResourceName == StarredContactGroupName) {
+            isFavorite = true;
+        }
 
         contactGroupResourceNames.append(membership.contactGroupResourceName);
+    }
+
+    QContactFavorite favoriteDetail = contact->detail<QContactFavorite>();
+    favoriteDetail.setFavorite(isFavorite);
+    if (!saveContactDetail(contact, &favoriteDetail)) {
+        return false;
     }
 
     // Preserve contactGroupResourceName values since a Person can belong to multiple contact
@@ -566,22 +579,40 @@ GooglePeople::Membership GooglePeople::Membership::fromJsonObject(const QJsonObj
     return ret;
 }
 
-QJsonArray GooglePeople::Membership::jsonValuesForContact(const QContact &contact)
+QJsonArray GooglePeople::Membership::jsonValuesForContact(const QContact &contact, bool *hasChanges)
 {
     QJsonArray array;
     QStringList contactGroupResourceNames = contactExtendedDetail(
                 contact, QStringLiteral("contactGroupResourceNames")).toStringList();
 
-    for (const QString &contactGroupResourceName : contactGroupResourceNames) {
-        QJsonObject membership;
-        // Add the nested contactGroupMembership object. Don't need to add "contactGroupId"
-        // property as that is deprecated.
-        QJsonObject contactGroupMembershipObject;
-        contactGroupMembershipObject.insert("contactGroupResourceName", contactGroupResourceName);
-        membership.insert("contactGroupMembership", contactGroupMembershipObject);
-
-        array.append(membership);
+    const QContactFavorite favoriteDetail = contact.detail<QContactFavorite>();
+    if (shouldAddDetailChanges(favoriteDetail, hasChanges)) {
+        const bool isFavorite = favoriteDetail.isFavorite();
+        if (isFavorite && contactGroupResourceNames.indexOf(StarredContactGroupName) < 0) {
+            contactGroupResourceNames.append(StarredContactGroupName);
+        } else if (!isFavorite) {
+            contactGroupResourceNames.removeOne(StarredContactGroupName);
+        }
     }
+
+    if (contact.id().isNull()) {
+        // This is a new contact, so add its collection into the list of memberships.
+        *hasChanges = true;
+    }
+
+    if (*hasChanges) {
+        // Add the list of all known memberships of this contact.
+        for (const QString &contactGroupResourceName : contactGroupResourceNames) {
+            QJsonObject membership;
+            // Add the nested contactGroupMembership object. Don't need to add "contactGroupId"
+            // property as that is deprecated.
+            QJsonObject contactGroupMembershipObject;
+            contactGroupMembershipObject.insert("contactGroupResourceName", contactGroupResourceName);
+            membership.insert("contactGroupMembership", contactGroupMembershipObject);
+            array.append(membership);
+        }
+    }
+
     return array;
 }
 
@@ -1117,6 +1148,8 @@ QJsonObject GooglePeople::Person::contactToJsonObject(const QContact &contact,
                             contact, &person, addedFields);
     addJsonValuesForContact<Event>(QStringLiteral("events"),
                             contact, &person, addedFields);
+    addJsonValuesForContact<Membership>(QStringLiteral("memberships"),
+                            contact, &person, addedFields);
     addJsonValuesForContact<Name>(QStringLiteral("names"),
                             contact, &person, addedFields);
     addJsonValuesForContact<Nickname>(QStringLiteral("nicknames"),
@@ -1127,16 +1160,6 @@ QJsonObject GooglePeople::Person::contactToJsonObject(const QContact &contact,
                             contact, &person, addedFields);
     addJsonValuesForContact<Url>(QStringLiteral("urls"),
                             contact, &person, addedFields);
-
-    if (contact.id().isNull()) {
-        // The membership (collection) of a contact never changes, so it only needs to be added
-        // if this is a new contact.
-        person.insert(QStringLiteral("memberships"),
-                      Membership::jsonValuesForContact(contact));
-        if (addedFields) {
-            addedFields->append(QStringLiteral("memberships"));
-        }
-    }
 
     return person;
 }

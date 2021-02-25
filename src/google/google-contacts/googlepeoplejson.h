@@ -156,7 +156,7 @@ namespace GooglePeople
                                        int accountId,
                                        const QList<QContactCollection> &candidateCollections);
         static Membership fromJsonObject(const QJsonObject &obj);
-        static QJsonArray jsonValuesForContact(const QContact &contact);
+        static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
     class Name
