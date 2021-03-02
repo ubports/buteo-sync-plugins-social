@@ -53,6 +53,7 @@ const int GOOGLE_CAL_SYNC_PLUGIN_VERSION = 3;
 const QByteArray NOTEBOOK_SERVER_SYNC_TOKEN_PROPERTY = QByteArrayLiteral("syncToken");
 const QByteArray NOTEBOOK_SERVER_ID_PROPERTY = QByteArrayLiteral("calendarServerId");
 const QByteArray NOTEBOOK_EMAIL_PROPERTY = QByteArrayLiteral("userPrincipalEmail");
+const QByteArray SERVER_COLOR_PROPERTY = QByteArrayLiteral("serverColor");
 const int COLLISION_ERROR_MAX_CONSECUTIVE = 8;
 const QByteArray VOLATILE_APP = QByteArrayLiteral("VOLATILE");
 const QByteArray VOLATILE_NAME = QByteArrayLiteral("SYNC-FAILURE");
@@ -2461,7 +2462,6 @@ void GoogleCalendarSyncAdaptor::setCalendarProperties(
 {
     notebook->setIsReadOnly(false);
     notebook->setName(calendarInfo.summary);
-    notebook->setColor(calendarInfo.color);
     notebook->setDescription(calendarInfo.description);
     notebook->setPluginName(QStringLiteral("google"));
     notebook->setSyncProfile(syncProfile);
@@ -2470,6 +2470,17 @@ void GoogleCalendarSyncAdaptor::setCalendarProperties(
     // extra calendars have their own email addresses. using this property to pass it forward.
     notebook->setSharedWith(QStringList() << serverCalendarId);
     notebook->setAccount(QString::number(accountId));
+
+    if (!calendarInfo.color.isEmpty()
+            && notebook->customProperty(SERVER_COLOR_PROPERTY) != calendarInfo.color) {
+        if (!notebook->customProperty(SERVER_COLOR_PROPERTY).isEmpty()) {
+            // Override user-selected notebook color only on each server change
+            // and not if there was no server color saved.
+            notebook->setColor(calendarInfo.color);
+        }
+        notebook->setCustomProperty(SERVER_COLOR_PROPERTY, calendarInfo.color);
+    }
+
 }
 
 void GoogleCalendarSyncAdaptor::applyRemoteChangesLocally()
