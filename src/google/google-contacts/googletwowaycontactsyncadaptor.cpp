@@ -188,6 +188,33 @@ void GoogleContactSqliteSyncAdaptor::syncFinishedSuccessfully()
 void GoogleContactSqliteSyncAdaptor::syncFinishedWithError()
 {
     SOCIALD_LOG_ERROR("Sync finished with error");
+
+    if (q->m_collection.id().isNull()) {
+        return;
+    }
+
+    // If sync fails, clear the sync token and date for the collection, so that the next sync
+    // requests a full contact listing, to ensure we are up-to-date with the server.
+
+    q->m_collection.setExtendedMetaData(CollectionKeySyncToken, QString());
+    q->m_collection.setExtendedMetaData(CollectionKeySyncTokenDate, QString());
+
+    QHash<QContactCollection*, QList<QContact>* > modifiedCollections;
+    QList<QContact> emptyContacts;
+    modifiedCollections.insert(&q->m_collection, &emptyContacts);
+
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*q->m_contactManager);
+    QContactManager::Error error = QContactManager::NoError;
+
+    if (!cme->storeChanges(nullptr,
+                          &modifiedCollections,
+                          QList<QContactCollectionId>(),
+                          QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
+                          true,
+                          &error)) {
+        SOCIALD_LOG_ERROR("Failed to clear sync token for account:" << q->m_accountId
+                          << "due to error:" << error);
+    }
 }
 
 //-------------------------------------
@@ -1110,12 +1137,14 @@ void GoogleTwoWayContactSyncAdaptor::purgeAccount(int pid)
 
 void GoogleTwoWayContactSyncAdaptor::finalize(int accountId)
 {
+    if (syncAborted()|| status() == SocialNetworkSyncAdaptor::Error) {
+        m_sqliteSync->syncFinishedWithError();
+        return;
+    }
+
     if (accountId != m_accountId
-            || m_accessToken.isEmpty()
-            || syncAborted()
-            || status() == SocialNetworkSyncAdaptor::Error) {
+            || m_accessToken.isEmpty()) {
         // account failure occurred before sync process was started,
-        // or other error occurred during sync.
         // in this case we have nothing left to do except cleanup.
         return;
     }
