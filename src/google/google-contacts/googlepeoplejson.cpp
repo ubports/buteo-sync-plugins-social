@@ -51,7 +51,7 @@ namespace {
 
 static const QString StarredContactGroupName = QStringLiteral("contactGroups/starred");
 
-QDate jsonObjectToDate(const QJsonObject &object)
+QDate jsonObjectToDate(const QJsonObject &object, bool *ok)
 {
     const int year = object.value("year").toInt();
     const int month = object.value("month").toInt();
@@ -60,6 +60,9 @@ QDate jsonObjectToDate(const QJsonObject &object)
     QDate date(year, month, day);
     if (!date.isValid()) {
         SOCIALD_LOG_ERROR("Cannot read date from JSON:" << object);
+    }
+    if (ok) {
+        *ok = date.isValid();
     }
     return date;
 }
@@ -80,7 +83,11 @@ QList<T> jsonArrayToList(const QJsonArray &array)
 {
     QList<T> values;
     for (auto it = array.constBegin(); it != array.constEnd(); ++it) {
-        values.append(T::fromJsonObject(it->toObject()));
+        bool error = false;
+        const T &value = T::fromJsonObject(it->toObject(), &error);
+        if (!error) {
+            values.append(value);
+        }
     }
     return values;
 }
@@ -169,7 +176,7 @@ bool shouldAddDetailChanges(const QContactDetail &detail, bool *hasChanges)
 
 }
 
-GooglePeople::Source GooglePeople::Source::fromJsonObject(const QJsonObject &object)
+GooglePeople::Source GooglePeople::Source::fromJsonObject(const QJsonObject &object, bool *)
 {
     Source ret;
     ret.type = object.value("type").toString();
@@ -223,7 +230,7 @@ bool GooglePeople::Address::saveContactDetails(QContact *contact, const QList<Ad
     return true;
 }
 
-GooglePeople::Address GooglePeople::Address::fromJsonObject(const QJsonObject &obj)
+GooglePeople::Address GooglePeople::Address::fromJsonObject(const QJsonObject &obj, bool *)
 {
     Address ret;
     ret.metadata = FieldMetadata::fromJsonObject(obj.value("metadata").toObject());
@@ -296,7 +303,7 @@ bool GooglePeople::Biography::saveContactDetails(QContact *contact, const QList<
     return saveContactDetail(contact, &detail);
 }
 
-GooglePeople::Biography GooglePeople::Biography::fromJsonObject(const QJsonObject &object)
+GooglePeople::Biography GooglePeople::Biography::fromJsonObject(const QJsonObject &object, bool *)
 {
     Biography ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -332,11 +339,20 @@ bool GooglePeople::Birthday::saveContactDetails(QContact *contact, const QList<B
     return saveContactDetail(contact, &detail);
 }
 
-GooglePeople::Birthday GooglePeople::Birthday::fromJsonObject(const QJsonObject &object)
+GooglePeople::Birthday GooglePeople::Birthday::fromJsonObject(const QJsonObject &object, bool *error)
 {
+    bool dateOk = false;
+    const QDate date = jsonObjectToDate(object.value("date").toObject(), &dateOk);
+    if (error) {
+        *error = !dateOk;
+    }
+    if (!dateOk) {
+        return Birthday();
+    }
+
     Birthday ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
-    ret.date = jsonObjectToDate(object.value("date").toObject());
+    ret.date = date;
     return ret;
 }
 
@@ -388,7 +404,7 @@ bool GooglePeople::EmailAddress::saveContactDetails(QContact *contact, const QLi
     return true;
 }
 
-GooglePeople::EmailAddress GooglePeople::EmailAddress::fromJsonObject(const QJsonObject &object)
+GooglePeople::EmailAddress GooglePeople::EmailAddress::fromJsonObject(const QJsonObject &object, bool *)
 {
     EmailAddress ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -467,11 +483,20 @@ bool GooglePeople::Event::saveContactDetails(QContact *contact, const QList<Even
     return true;
 }
 
-GooglePeople::Event GooglePeople::Event::fromJsonObject(const QJsonObject &object)
+GooglePeople::Event GooglePeople::Event::fromJsonObject(const QJsonObject &object, bool *error)
 {
+    bool dateOk = false;
+    const QDate date = jsonObjectToDate(object.value("date").toObject(), &dateOk);
+    if (error) {
+        *error = !dateOk;
+    }
+    if (!dateOk) {
+        return Event();
+    }
+
     Event ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
-    ret.date = jsonObjectToDate(object.value("date").toObject());
+    ret.date = date;
     ret.type = object.value("type").toString();
     return ret;
 }
@@ -568,7 +593,7 @@ bool GooglePeople::Membership::saveContactDetails(
     return true;
 }
 
-GooglePeople::Membership GooglePeople::Membership::fromJsonObject(const QJsonObject &object)
+GooglePeople::Membership GooglePeople::Membership::fromJsonObject(const QJsonObject &object, bool *)
 {
     Membership ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -631,7 +656,7 @@ bool GooglePeople::Name::saveContactDetails(QContact *contact, const QList<Name>
     return saveContactDetail(contact, &detail);
 }
 
-GooglePeople::Name GooglePeople::Name::fromJsonObject(const QJsonObject &object)
+GooglePeople::Name GooglePeople::Name::fromJsonObject(const QJsonObject &object, bool *)
 {
     Name ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -676,7 +701,7 @@ bool GooglePeople::Nickname::saveContactDetails(QContact *contact, const QList<N
     return true;
 }
 
-GooglePeople::Nickname GooglePeople::Nickname::fromJsonObject(const QJsonObject &object)
+GooglePeople::Nickname GooglePeople::Nickname::fromJsonObject(const QJsonObject &object, bool *)
 {
     Nickname ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -718,7 +743,7 @@ bool GooglePeople::Organization::saveContactDetails(QContact *contact, const QLi
     return true;
 }
 
-GooglePeople::Organization GooglePeople::Organization::fromJsonObject(const QJsonObject &object)
+GooglePeople::Organization GooglePeople::Organization::fromJsonObject(const QJsonObject &object, bool *)
 {
     Organization ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -795,7 +820,7 @@ bool GooglePeople::PhoneNumber::saveContactDetails(QContact *contact, const QLis
     return true;
 }
 
-GooglePeople::PhoneNumber GooglePeople::PhoneNumber::fromJsonObject(const QJsonObject &object)
+GooglePeople::PhoneNumber GooglePeople::PhoneNumber::fromJsonObject(const QJsonObject &object, bool *)
 {
     PhoneNumber ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -882,7 +907,7 @@ QString GooglePeople::PersonMetadata::etag(const QContact &contact)
     return sourceInfo.value("etag").toString();
 }
 
-GooglePeople::PersonMetadata GooglePeople::PersonMetadata::fromJsonObject(const QJsonObject &object)
+GooglePeople::PersonMetadata GooglePeople::PersonMetadata::fromJsonObject(const QJsonObject &object, bool *)
 {
     PersonMetadata ret;
     ret.sources = jsonArrayToList<Source>(object.value("sources").toArray());
@@ -961,7 +986,7 @@ bool GooglePeople::Photo::saveContactDetails(QContact *contact, const QList<Phot
     return true;
 }
 
-GooglePeople::Photo GooglePeople::Photo::fromJsonObject(const QJsonObject &object)
+GooglePeople::Photo GooglePeople::Photo::fromJsonObject(const QJsonObject &object, bool *)
 {
     Photo ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -1008,7 +1033,7 @@ bool GooglePeople::Url::saveContactDetails(QContact *contact, const QList<Url> &
     return true;
 }
 
-GooglePeople::Url GooglePeople::Url::fromJsonObject(const QJsonObject &object)
+GooglePeople::Url GooglePeople::Url::fromJsonObject(const QJsonObject &object, bool *)
 {
     Url ret;
     ret.metadata = FieldMetadata::fromJsonObject(object.value("metadata").toObject());
@@ -1091,7 +1116,7 @@ GooglePeople::Person GooglePeople::Person::fromJsonObject(const QJsonObject &obj
 {
     Person ret;
     ret.resourceName = object.value("resourceName").toString();
-    ret.metadata = PersonMetadata::fromJsonObject(object.value("metadata").toObject());
+    ret.metadata = PersonMetadata::fromJsonObject(object.value("metadata").toObject(), nullptr);
     ret.addresses = jsonArrayToList<Address>(object.value("addresses").toArray());
     ret.biographies = jsonArrayToList<Biography>(object.value("biographies").toArray());
     ret.birthdays = jsonArrayToList<Birthday>(object.value("birthdays").toArray());

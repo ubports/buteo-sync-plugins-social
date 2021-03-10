@@ -45,7 +45,7 @@ namespace GooglePeople
         ProfileMetadata profileMetadata;
         */
 
-        static Source fromJsonObject(const QJsonObject &obj);
+        static Source fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
     };
 
     class FieldMetadata
@@ -75,7 +75,7 @@ namespace GooglePeople
         QString countryCode;
 
         static bool saveContactDetails(QContact *contact, const QList<Address> &values);
-        static Address fromJsonObject(const QJsonObject &obj);
+        static Address fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -90,7 +90,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<Biography> &values);
-        static Biography fromJsonObject(const QJsonObject &obj);
+        static Biography fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -105,7 +105,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<Birthday> &values);
-        static Birthday fromJsonObject(const QJsonObject &obj);
+        static Birthday fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -119,7 +119,7 @@ namespace GooglePeople
         QString displayName;
 
         static bool saveContactDetails(QContact *contact, const QList<EmailAddress> &values);
-        static EmailAddress fromJsonObject(const QJsonObject &obj);
+        static EmailAddress fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -135,7 +135,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<Event> &values);
-        static Event fromJsonObject(const QJsonObject &obj);
+        static Event fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -155,7 +155,7 @@ namespace GooglePeople
                                        const QList<Membership> &values,
                                        int accountId,
                                        const QList<QContactCollection> &candidateCollections);
-        static Membership fromJsonObject(const QJsonObject &obj);
+        static Membership fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -182,7 +182,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<Name> &values);
-        static Name fromJsonObject(const QJsonObject &obj);
+        static Name fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -197,7 +197,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<Nickname> &values);
-        static Nickname fromJsonObject(const QJsonObject &obj);
+        static Nickname fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -222,7 +222,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<Organization> &values);
-        static Organization fromJsonObject(const QJsonObject &obj);
+        static Organization fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -239,7 +239,7 @@ namespace GooglePeople
         */
 
         static bool saveContactDetails(QContact *contact, const QList<PhoneNumber> &values);
-        static PhoneNumber fromJsonObject(const QJsonObject &obj);
+        static PhoneNumber fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -254,7 +254,7 @@ namespace GooglePeople
         static QString etag(const QContact &contact);
 
         static bool saveContactDetails(QContact *contact, const PersonMetadata &value);
-        static PersonMetadata fromJsonObject(const QJsonObject &obj);
+        static PersonMetadata fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonObject toJsonObject(const QContact &contact);
     };
 
@@ -270,7 +270,7 @@ namespace GooglePeople
                                        QString *localAvatarFile = nullptr);
 
         static bool saveContactDetails(QContact *contact, const QList<Photo> &values);
-        static Photo fromJsonObject(const QJsonObject &obj);
+        static Photo fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
@@ -283,7 +283,7 @@ namespace GooglePeople
         QString formattedType;
 
         static bool saveContactDetails(QContact *contact, const QList<Url> &values);
-        static Url fromJsonObject(const QJsonObject &obj);
+        static Url fromJsonObject(const QJsonObject &obj, bool *error = nullptr);
         static QJsonArray jsonValuesForContact(const QContact &contact, bool *hasChanges);
     };
 
