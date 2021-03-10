@@ -419,7 +419,8 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
 
     if (reply->error() == QNetworkReply::ProtocolInvalidOperationError) {
         QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-        if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 400) {
+        if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 400
+                && !m_retriedConnectionsList) {
             SOCIALD_LOG_INFO("Will request new sync token, got error from server:"
                              << reply->readAll());
             DataRequestType requestType = static_cast<DataRequestType>(
@@ -428,6 +429,7 @@ void GoogleTwoWayContactSyncAdaptor::contactsFinishedHandler()
                         reply->property("contactChangeNotifier").toInt());
             m_connectionsListParams.requestSyncToken = true;
             m_connectionsListParams.syncToken.clear();
+            m_retriedConnectionsList = true;
             requestData(requestType, contactChangeNotifier);
             decrementSemaphore(m_accountId);
             return;
