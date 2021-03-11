@@ -173,6 +173,7 @@ private:
 
     int m_accountId = 0;
     int m_apiRequestsRemaining = 0;
+    bool m_retriedConnectionsList = false;
     bool m_allowFinalCleanup = false;
 };
 
