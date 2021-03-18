@@ -942,8 +942,6 @@ QString getErrorReason(const QByteArray &replyData)
 
 KCalendarCore::Event::Ptr dissociateSingleOccurrence(const KCalendarCore::Event::Ptr &event, const QDateTime &dateTime)
 {
-    const QDateTime modified = event->lastModified();
-
     // Create a new incidence
     KCalendarCore::Event::Ptr newEvent = KCalendarCore::Event::Ptr(event->clone());
     newEvent->setCreated(QDateTime::currentDateTimeUtc());
@@ -974,9 +972,6 @@ KCalendarCore::Event::Ptr dissociateSingleOccurrence(const KCalendarCore::Event:
                         recId.time().second()));
     newEvent->setRecurrenceId(recId);
 
-    // Don't update the modification date of the parent
-    event->setLastModified(modified);
-
     return newEvent;
 }
 
@@ -990,6 +985,7 @@ GoogleCalendarSyncAdaptor::GoogleCalendarSyncAdaptor(QObject *parent)
     , m_storage(mKCal::ExtendedCalendar::defaultStorage(m_calendar))
     , m_storageNeedsSave(false)
 {
+    m_calendar->setUpdateLastModifiedOnChange(false);
     setInitialActive(true);
 }
 
@@ -3115,14 +3111,12 @@ void GoogleCalendarSyncAdaptor::applySyncFailureFlag(KCalendarCore::Event::Ptr e
 
     if (current != updated) {
         SOCIALD_LOG_DEBUG("Changing flag from" << current << "to" << updated << "for" << event->uid());
-        const QDateTime lastModified = event->lastModified();
         if (!updated.isEmpty()) {
             event->setCustomProperty(VOLATILE_APP, VOLATILE_NAME, updated);
 
         } else {
             event->removeCustomProperty(VOLATILE_APP, VOLATILE_NAME);
         }
-        event->setLastModified(lastModified);
         m_storageNeedsSave = true;
     }
 }
