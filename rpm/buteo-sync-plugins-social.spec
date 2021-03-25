@@ -21,7 +21,7 @@ BuildRequires:  pkgconfig(libsailfishkeyprovider)
 BuildRequires:  pkgconfig(contactcache-qt5)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.3.0
 BuildRequires:  pkgconfig(libmkcal-qt5) >= 0.5.9
-BuildRequires:  pkgconfig(KF5CalendarCore)
+BuildRequires:  pkgconfig(KF5CalendarCore) >= 5.79
 BuildRequires:  nemo-qml-plugin-notifications-qt5-devel
 Requires: buteo-syncfw-qt5-msyncd
 Requires: systemd
