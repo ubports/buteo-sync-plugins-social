@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Antti Seppälä <antti.seppala@jolla.com>
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -24,7 +23,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class SOCIALDBUTEOPLUGIN_EXPORT OneDriveImagesPlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT OneDriveImagesPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -38,10 +39,18 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" OneDriveImagesPlugin* createPlugin(const QString& pluginName,
-                                                const Buteo::SyncProfile& profile,
-                                                Buteo::PluginCbInterface *cbInterface);
 
-extern "C" void destroyPlugin(OneDriveImagesPlugin* client);
+class OneDriveImagesPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.OneDriveImagesPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
+
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
+
 
 #endif // ONEDRIVEIMAGESPLUGIN_H

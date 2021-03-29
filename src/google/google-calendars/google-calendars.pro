@@ -1,7 +1,5 @@
 TARGET = google-calendars-client
 
-DEFINES += "CLASSNAME=GoogleCalendarsPlugin"
-DEFINES += CLASSNAME_H=\\\"googlecalendarsplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../google-common.pri)
 include($$PWD/google-calendars.pri)

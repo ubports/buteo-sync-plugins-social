@@ -1,7 +1,5 @@
 TARGET = onedrive-images-client
 
-DEFINES += "CLASSNAME=OneDriveImagesPlugin"
-DEFINES += CLASSNAME_H=\\\"onedriveimagesplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../onedrive-common.pri)
 include($$PWD/onedrive-images.pri)

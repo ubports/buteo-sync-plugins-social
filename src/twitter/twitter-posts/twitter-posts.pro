@@ -1,7 +1,5 @@
 TARGET = twitter-posts-client
 
-DEFINES += "CLASSNAME=TwitterPostsPlugin"
-DEFINES += CLASSNAME_H=\\\"twitterpostsplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../twitter-common.pri)
 include($$PWD/twitter-posts.pri)

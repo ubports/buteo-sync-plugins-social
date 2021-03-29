@@ -10,7 +10,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class VKNotificationsPlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT VKNotificationsPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -24,10 +26,17 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" VKNotificationsPlugin* createPlugin(const QString& pluginName,
-                                                const Buteo::SyncProfile& profile,
-                                                Buteo::PluginCbInterface *cbInterface);
 
-extern "C" void destroyPlugin(VKNotificationsPlugin* client);
+class VKNotificationsPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.VKNotificationsPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
+
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 
 #endif // VKNOTIFICATIONSPLUGIN_H

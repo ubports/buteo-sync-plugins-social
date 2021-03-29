@@ -1,6 +1,7 @@
 /****************************************************************************
  **
  ** Copyright (c) 2020 Open Mobile Platform LLC.
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -22,18 +23,6 @@
 #include "onedrivebackupsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" OneDriveBackupPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new OneDriveBackupPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(OneDriveBackupPlugin* plugin)
-{
-    delete plugin;
-}
-
 OneDriveBackupPlugin::OneDriveBackupPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -50,4 +39,12 @@ OneDriveBackupPlugin::~OneDriveBackupPlugin()
 SocialNetworkSyncAdaptor *OneDriveBackupPlugin::createSocialNetworkSyncAdaptor()
 {
     return new OneDriveBackupSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* OneDriveBackupPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new OneDriveBackupPlugin(pluginName, profile, cbInterface);
 }

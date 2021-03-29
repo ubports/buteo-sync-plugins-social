@@ -1,6 +1,7 @@
 /****************************************************************************
  **
  ** Copyright (c) 2020 Open Mobile Platform LLC.
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,7 +24,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class SOCIALDBUTEOPLUGIN_EXPORT DropboxBackupRestorePlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT DropboxBackupRestorePlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -37,10 +40,16 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" DropboxBackupRestorePlugin* createPlugin(const QString& pluginName,
-                                              const Buteo::SyncProfile& profile,
-                                              Buteo::PluginCbInterface *cbInterface);
+class DropboxBackupRestorePluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.DropboxBackupRestorePluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
 
-extern "C" void destroyPlugin(DropboxBackupRestorePlugin* client);
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 
 #endif // DROPBOXBACKUPRESTOREPLUGIN_H

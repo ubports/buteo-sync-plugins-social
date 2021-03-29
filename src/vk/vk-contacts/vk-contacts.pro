@@ -1,7 +1,5 @@
 TARGET = vk-contacts-client
 
-DEFINES += "CLASSNAME=VKContactsPlugin"
-DEFINES += CLASSNAME_H=\\\"vkcontactsplugin.h\\\"
 DEFINES += SOCIALD_USE_QTPIM
 include($$PWD/../../common.pri)
 include($$PWD/../vk-common.pri)

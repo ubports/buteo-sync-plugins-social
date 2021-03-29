@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2013-2014 Jolla Ltd.
- ** Contact: Raine Makelainen <raine.makelainen@jollamobile.com>
+ ** Copyright (c) 2013 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -27,12 +26,6 @@
 
 #include "buteosyncfw_p.h"
 
-#if defined(OUT_OF_PROCESS_PLUGIN)
-#  define SOCIALDPLUGIN_EXPORT Q_DECL_EXPORT
-#else
-#  define SOCIALDPLUGIN_EXPORT Q_DECL_IMPORT
-#endif
-
 /*
    This plugin implementation provides a simple way
    to trigger syncs of all datatypes for all accounts,
@@ -55,7 +48,7 @@
    Note that it does not extend SocialdButeoPlugin
    (from common.pri) as it uses a different mechanism.
 */
-class SOCIALDPLUGIN_EXPORT SocialdPlugin : public Buteo::ClientPlugin
+class Q_DECL_EXPORT SocialdPlugin : public Buteo::ClientPlugin
 {
     Q_OBJECT
 
@@ -82,10 +75,6 @@ private:
     QString m_serviceName;
 };
 
-extern "C" SocialdPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *cbInterface);
 
-extern "C" void destroyPlugin(SocialdPlugin* client);
 
 #endif // SOCIALDPLUGIN_H

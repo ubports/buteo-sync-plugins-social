@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ****************************************************************************/
 
@@ -10,7 +9,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class VKCalendarsPlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT VKCalendarsPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -24,10 +25,17 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" VKCalendarsPlugin* createPlugin(const QString& pluginName,
-                                           const Buteo::SyncProfile& profile,
-                                           Buteo::PluginCbInterface *cbInterface);
 
-extern "C" void destroyPlugin(VKCalendarsPlugin* client);
+class VKCalendarsPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.VKCalendarsPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
+
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 
 #endif // VKCALENDARSPLUGIN_H

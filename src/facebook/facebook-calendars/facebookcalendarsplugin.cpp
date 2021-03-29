@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "facebookcalendarsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" FacebookCalendarsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new FacebookCalendarsPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(FacebookCalendarsPlugin* plugin)
-{
-    delete plugin;
-}
-
 FacebookCalendarsPlugin::FacebookCalendarsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,13 @@ FacebookCalendarsPlugin::~FacebookCalendarsPlugin()
 SocialNetworkSyncAdaptor *FacebookCalendarsPlugin::createSocialNetworkSyncAdaptor()
 {
     return new FacebookCalendarSyncAdaptor(this);
+}
+
+
+Buteo::ClientPlugin* FacebookCalendarsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new FacebookCalendarsPlugin(pluginName, profile, cbInterface);
 }

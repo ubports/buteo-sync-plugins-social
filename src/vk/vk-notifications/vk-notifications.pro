@@ -1,7 +1,5 @@
 TARGET = vk-notifications-client
 
-DEFINES += "CLASSNAME=VKNotificationsPlugin"
-DEFINES += CLASSNAME_H=\\\"vknotificationsplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../vk-common.pri)
 include($$PWD/vk-notifications.pri)

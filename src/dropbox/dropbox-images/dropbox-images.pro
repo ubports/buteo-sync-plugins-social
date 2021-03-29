@@ -1,7 +1,5 @@
 TARGET = dropbox-images-client
 
-DEFINES += "CLASSNAME=DropboxImagesPlugin"
-DEFINES += CLASSNAME_H=\\\"dropboximagesplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../dropbox-common.pri)
 include($$PWD/dropbox-images.pri)

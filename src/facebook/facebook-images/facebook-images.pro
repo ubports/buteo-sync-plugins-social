@@ -1,7 +1,5 @@
 TARGET = facebook-images-client
 
-DEFINES += "CLASSNAME=FacebookImagesPlugin"
-DEFINES += CLASSNAME_H=\\\"facebookimagesplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../facebook-common.pri)
 include($$PWD/facebook-images.pri)

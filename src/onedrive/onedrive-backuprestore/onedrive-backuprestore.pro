@@ -1,7 +1,5 @@
 TARGET = onedrive-backuprestore-client
 
-DEFINES += "CLASSNAME=OneDriveBackupRestorePlugin"
-DEFINES += CLASSNAME_H=\\\"onedrivebackuprestoreplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../onedrive-common.pri)
 include($$PWD/../onedrive-backupoperation.pri)

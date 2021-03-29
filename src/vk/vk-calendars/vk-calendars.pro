@@ -1,7 +1,5 @@
 TARGET = vk-calendars-client
 
-DEFINES += "CLASSNAME=VKCalendarsPlugin"
-DEFINES += CLASSNAME_H=\\\"vkcalendarsplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../vk-common.pri)
 include($$PWD/vk-calendars.pri)

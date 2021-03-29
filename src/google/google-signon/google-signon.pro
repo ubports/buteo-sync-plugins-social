@@ -1,7 +1,5 @@
 TARGET = google-signon-client
 
-DEFINES += "CLASSNAME=GoogleSignonPlugin"
-DEFINES += CLASSNAME_H=\\\"googlesignonplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../google-common.pri)
 include($$PWD/google-signon.pri)

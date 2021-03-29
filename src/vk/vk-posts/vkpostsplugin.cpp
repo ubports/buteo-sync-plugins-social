@@ -13,18 +13,6 @@
 #include "vkpostsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" VKPostsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new VKPostsPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(VKPostsPlugin* plugin)
-{
-    delete plugin;
-}
-
 VKPostsPlugin::VKPostsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -41,4 +29,12 @@ VKPostsPlugin::~VKPostsPlugin()
 SocialNetworkSyncAdaptor *VKPostsPlugin::createSocialNetworkSyncAdaptor()
 {
     return new VKPostSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* VKPostsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new VKPostsPlugin(pluginName, profile, cbInterface);
 }

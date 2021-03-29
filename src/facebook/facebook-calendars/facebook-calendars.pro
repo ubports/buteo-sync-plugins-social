@@ -1,7 +1,5 @@
 TARGET = facebook-calendars-client
 
-DEFINES += "CLASSNAME=FacebookCalendarsPlugin"
-DEFINES += CLASSNAME_H=\\\"facebookcalendarsplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../facebook-common.pri)
 include($$PWD/facebook-calendars.pri)

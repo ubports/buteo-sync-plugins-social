@@ -1,6 +1,7 @@
 /****************************************************************************
  **
  ** Copyright (c) 2020 Open Mobile Platform LLC.
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -22,18 +23,6 @@
 #include "dropboxbackupquerysyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" DropboxBackupQueryPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new DropboxBackupQueryPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(DropboxBackupQueryPlugin* plugin)
-{
-    delete plugin;
-}
-
 DropboxBackupQueryPlugin::DropboxBackupQueryPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -50,4 +39,12 @@ DropboxBackupQueryPlugin::~DropboxBackupQueryPlugin()
 SocialNetworkSyncAdaptor *DropboxBackupQueryPlugin::createSocialNetworkSyncAdaptor()
 {
     return new DropboxBackupQuerySyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* DropboxBackupQueryPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new DropboxBackupQueryPlugin(pluginName, profile, cbInterface);
 }

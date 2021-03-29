@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -27,17 +26,7 @@
 #include "googletwowaycontactsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" GoogleContactsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new GoogleContactsPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(GoogleContactsPlugin* plugin)
-{
-    delete plugin;
-}
+#include <QDebug>
 
 GoogleContactsPlugin::GoogleContactsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
@@ -56,3 +45,13 @@ SocialNetworkSyncAdaptor *GoogleContactsPlugin::createSocialNetworkSyncAdaptor()
 {
     return new GoogleTwoWayContactSyncAdaptor(this);
 }
+
+
+Buteo::ClientPlugin* GoogleContactsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new GoogleContactsPlugin(pluginName, profile, cbInterface);
+}
+
