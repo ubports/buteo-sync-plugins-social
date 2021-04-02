@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "twitterhometimelinesyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" TwitterPostsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new TwitterPostsPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(TwitterPostsPlugin* plugin)
-{
-    delete plugin;
-}
-
 TwitterPostsPlugin::TwitterPostsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,13 @@ TwitterPostsPlugin::~TwitterPostsPlugin()
 SocialNetworkSyncAdaptor *TwitterPostsPlugin::createSocialNetworkSyncAdaptor()
 {
     return new TwitterHomeTimelineSyncAdaptor(this);
+}
+
+
+Buteo::ClientPlugin* TwitterPostsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new TwitterPostsPlugin(pluginName, profile, cbInterface);
 }

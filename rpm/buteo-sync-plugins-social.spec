@@ -13,7 +13,7 @@ BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Contacts)
 BuildRequires:  qt5-qttools-linguist
 BuildRequires:  pkgconfig(mlite5)
-BuildRequires:  pkgconfig(buteosyncfw5) >= 0.6.36
+BuildRequires:  pkgconfig(buteosyncfw5) >= 0.10.0
 BuildRequires:  pkgconfig(libsignon-qt5)
 BuildRequires:  pkgconfig(accounts-qt5) >= 1.13
 BuildRequires:  pkgconfig(socialcache) >= 0.0.48
@@ -35,10 +35,7 @@ A Buteo plugin which provides data synchronization with various social services.
 
 %files
 %defattr(-,root,root,-)
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/sociald-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libsociald-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libsociald-client.so
 %config %{_sysconfdir}/buteo/profiles/client/sociald.xml
 %config %{_sysconfdir}/buteo/profiles/sync/sociald.All.xml
 %{_libdir}/libsyncpluginscommon.so.*
@@ -60,24 +57,15 @@ Provides: sociald-facebook-signon
 
 %files facebook
 # calendar:
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/facebook-calendars-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libfacebook-calendars-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libfacebook-calendars-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-calendars.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Calendars.xml
 # images:
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/facebook-images-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libfacebook-images-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libfacebook-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Images.xml
 # signon
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/facebook-signon-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libfacebook-signon-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libfacebook-signon-client.so
 %config %{_sysconfdir}/buteo/profiles/client/facebook-signon.xml
 %config %{_sysconfdir}/buteo/profiles/sync/facebook.Signon.xml
 
@@ -123,24 +111,15 @@ Provides: sociald-google-signon
 
 %files google
 # calendar
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/google-calendars-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libgoogle-calendars-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libgoogle-calendars-client.so
 %config %{_sysconfdir}/buteo/profiles/client/google-calendars.xml
 %config %{_sysconfdir}/buteo/profiles/sync/google.Calendars.xml
 # contacts
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/google-contacts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libgoogle-contacts-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libgoogle-contacts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/google-contacts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/google.Contacts.xml
 # signon
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/google-signon-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libgoogle-signon-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libgoogle-signon-client.so
 %config %{_sysconfdir}/buteo/profiles/client/google-signon.xml
 %config %{_sysconfdir}/buteo/profiles/sync/google.Signon.xml
 
@@ -180,18 +159,12 @@ Provides: sociald-twitter-posts
 
 %files twitter
 # notifications
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/twitter-notifications-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libtwitter-notifications-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libtwitter-notifications-client.so
 %config %{_sysconfdir}/buteo/profiles/client/twitter-notifications.xml
 %config %{_sysconfdir}/buteo/profiles/sync/twitter.Notifications.xml
 %{_datadir}/translations/lipstick-jolla-home-twitter-notif_eng_en.qm
 # posts
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/twitter-posts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libtwitter-posts-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libtwitter-posts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/twitter-posts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/twitter.Posts.xml
 
@@ -228,26 +201,17 @@ Provides: sociald-onedrive-backup
 
 %files onedrive
 # signon
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/onedrive-signon-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libonedrive-signon-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libonedrive-signon-client.so
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-signon.xml
 %config %{_sysconfdir}/buteo/profiles/sync/onedrive.Signon.xml
 # images
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/onedrive-images-client
+%{_libdir}/buteo-plugins-qt5/oopp/libonedrive-images-client.so
 # backup
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libonedrive-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/onedrive.Images.xml
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/onedrive-backup-client
-%{_libdir}/buteo-plugins-qt5/oopp/onedrive-backupquery-client
-%{_libdir}/buteo-plugins-qt5/oopp/onedrive-backuprestore-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libonedrive-backup-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libonedrive-backup-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libonedrive-backupquery-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libonedrive-backuprestore-client.so
 #%%{_libdir}/buteo-plugins-qt5/libonedrive-backupquery-client.so
 #%%{_libdir}/buteo-plugins-qt5/libonedrive-backuprestore-client.so
 %config %{_sysconfdir}/buteo/profiles/client/onedrive-backup.xml
@@ -305,38 +269,24 @@ Provides: sociald-vk-images
 
 %files vk
 # posts
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/vk-posts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libvk-posts-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libvk-posts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-posts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Posts.xml
 # notifications
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/vk-notifications-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libvk-notifications-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libvk-notifications-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-notifications.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Notifications.xml
 # calendars
 #out-of-proces-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/vk-calendars-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libvk-calendars-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libvk-calendars-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-calendars.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Calendars.xml
 # contacts
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/vk-contacts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libvk-contacts-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libvk-contacts-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-contacts.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Contacts.xml
 # images
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/vk-images-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libvk-images-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libvk-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/vk-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/vk.Images.xml
 
@@ -392,19 +342,13 @@ Provides: sociald-dropbox-backup
 
 %files dropbox
 # images
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/dropbox-images-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libdropbox-images-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libdropbox-images-client.so
 %config %{_sysconfdir}/buteo/profiles/client/dropbox-images.xml
 %config %{_sysconfdir}/buteo/profiles/sync/dropbox.Images.xml
 # backup
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/dropbox-backup-client
-%{_libdir}/buteo-plugins-qt5/oopp/dropbox-backupquery-client
-%{_libdir}/buteo-plugins-qt5/oopp/dropbox-backuprestore-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/libdropbox-backup-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libdropbox-backup-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libdropbox-backupquery-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libdropbox-backuprestore-client.so
 #%%{_libdir}/buteo-plugins-qt5/libdropbox-backupquery-client.so
 #%%{_libdir}/buteo-plugins-qt5/libdropbox-backuprestore-client.so
 %config %{_sysconfdir}/buteo/profiles/client/dropbox-backup.xml
@@ -452,10 +396,7 @@ systemctl-user try-restart msyncd.service || :
 
 %files knowncontacts
 %defattr(-,root,root,-)
-#out-of-process-plugin form:
-%{_libdir}/buteo-plugins-qt5/oopp/knowncontacts-client
-#in-process-plugin form:
-#%%{_libdir}/buteo-plugins-qt5/knowncontacts-client.so
+%{_libdir}/buteo-plugins-qt5/oopp/libknowncontacts-client.so
 %{_sysconfdir}/buteo/profiles/client/knowncontacts.xml
 %{_sysconfdir}/buteo/profiles/sync/knowncontacts.Contacts.xml
 
@@ -476,7 +417,7 @@ Summary:    Translation source for sociald
 %setup -q -n %{name}-%{version}
 
 %build
-%qmake5 "DEFINES+=OUT_OF_PROCESS_PLUGIN" \
+%qmake5 \
     "CONFIG+=dropbox" \
     "CONFIG+=facebook" \
     "CONFIG+=google" \

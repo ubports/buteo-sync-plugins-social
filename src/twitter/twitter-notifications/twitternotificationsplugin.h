@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -24,7 +23,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class SOCIALDBUTEOPLUGIN_EXPORT TwitterNotificationsPlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT TwitterNotificationsPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -38,10 +39,16 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" TwitterNotificationsPlugin* createPlugin(const QString& pluginName,
-                                                const Buteo::SyncProfile& profile,
-                                                Buteo::PluginCbInterface *cbInterface);
+class TwitterNotificationsPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.TwitterNotificationsPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
 
-extern "C" void destroyPlugin(TwitterNotificationsPlugin* client);
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 
 #endif // TWITTERNOTIFICATIONSPLUGIN_H

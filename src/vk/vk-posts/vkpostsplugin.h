@@ -10,7 +10,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class VKPostsPlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT VKPostsPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -24,10 +26,16 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" VKPostsPlugin* createPlugin(const QString& pluginName,
-                                                const Buteo::SyncProfile& profile,
-                                                Buteo::PluginCbInterface *cbInterface);
+class VKPostsPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.VKPostsPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
 
-extern "C" void destroyPlugin(VKPostsPlugin* client);
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 
 #endif // VKPOSTSPLUGIN_H

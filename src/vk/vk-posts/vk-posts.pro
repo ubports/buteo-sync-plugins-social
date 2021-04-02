@@ -1,7 +1,5 @@
 TARGET = vk-posts-client
 
-DEFINES += "CLASSNAME=VKPostsPlugin"
-DEFINES += CLASSNAME_H=\\\"vkpostsplugin.h\\\"
 DEFINES += SOCIALD_USE_QTPIM
 include($$PWD/../../common.pri)
 include($$PWD/../vk-common.pri)

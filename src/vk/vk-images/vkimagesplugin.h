@@ -24,7 +24,9 @@
 
 #include "socialdbuteoplugin.h"
 
-class SOCIALDBUTEOPLUGIN_EXPORT VKImagesPlugin : public SocialdButeoPlugin
+#include <buteosyncfw5/SyncPluginLoader.h>
+
+class Q_DECL_EXPORT VKImagesPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -38,10 +40,16 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" VKImagesPlugin* createPlugin(const QString& pluginName,
-                                        const Buteo::SyncProfile& profile,
-                                        Buteo::PluginCbInterface *cbInterface);
+class VKImagesPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.VKImagesPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
 
-extern "C" void destroyPlugin(VKImagesPlugin* client);
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 
 #endif // VKIMAGESPLUGIN_H

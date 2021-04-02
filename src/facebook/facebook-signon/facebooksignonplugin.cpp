@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "facebooksignonsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" FacebookSignonPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new FacebookSignonPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(FacebookSignonPlugin* plugin)
-{
-    delete plugin;
-}
-
 FacebookSignonPlugin::FacebookSignonPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,12 @@ FacebookSignonPlugin::~FacebookSignonPlugin()
 SocialNetworkSyncAdaptor *FacebookSignonPlugin::createSocialNetworkSyncAdaptor()
 {
     return new FacebookSignonSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* FacebookSignonPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new FacebookSignonPlugin(pluginName, profile, cbInterface);
 }

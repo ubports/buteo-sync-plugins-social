@@ -1,7 +1,5 @@
 TARGET = twitter-notifications-client
 
-DEFINES += "CLASSNAME=TwitterNotificationsPlugin"
-DEFINES += CLASSNAME_H=\\\"twitternotificationsplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../twitter-common.pri)
 include($$PWD/twitter-notifications.pri)

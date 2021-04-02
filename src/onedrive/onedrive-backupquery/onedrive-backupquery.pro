@@ -1,7 +1,5 @@
 TARGET = onedrive-backupquery-client
 
-DEFINES += "CLASSNAME=OneDriveBackupQueryPlugin"
-DEFINES += CLASSNAME_H=\\\"onedrivebackupqueryplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../onedrive-common.pri)
 include($$PWD/../onedrive-backupoperation.pri)

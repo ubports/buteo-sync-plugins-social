@@ -1,7 +1,5 @@
 TARGET = onedrive-signon-client
 
-DEFINES += "CLASSNAME=OneDriveSignonPlugin"
-DEFINES += CLASSNAME_H=\\\"onedrivesignonplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../onedrive-common.pri)
 include($$PWD/onedrive-signon.pri)

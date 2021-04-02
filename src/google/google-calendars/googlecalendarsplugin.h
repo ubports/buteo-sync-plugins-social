@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -24,7 +23,7 @@
 
 #include "socialdbuteoplugin.h"
 
-class SOCIALDBUTEOPLUGIN_EXPORT GoogleCalendarsPlugin : public SocialdButeoPlugin
+class Q_DECL_EXPORT GoogleCalendarsPlugin : public SocialdButeoPlugin
 {
     Q_OBJECT
 
@@ -38,10 +37,6 @@ protected:
     SocialNetworkSyncAdaptor *createSocialNetworkSyncAdaptor();
 };
 
-extern "C" GoogleCalendarsPlugin* createPlugin(const QString& pluginName,
-                                               const Buteo::SyncProfile& profile,
-                                               Buteo::PluginCbInterface *cbInterface);
 
-extern "C" void destroyPlugin(GoogleCalendarsPlugin* client);
 
 #endif // GOOGLECALENDARSPLUGIN_H

@@ -25,19 +25,13 @@
 #include <QtCore/qglobal.h>
 #include "buteosyncfw_p.h"
 
-#if defined(OUT_OF_PROCESS_PLUGIN)
-#  define SOCIALDBUTEOPLUGIN_EXPORT Q_DECL_EXPORT
-#else
-#  define SOCIALDBUTEOPLUGIN_EXPORT Q_DECL_IMPORT
-#endif
-
 /*
    Datatype-specific implementations of this class
    allow per-account sync profiles for that data type.
 */
 
 class SocialNetworkSyncAdaptor;
-class SOCIALDBUTEOPLUGIN_EXPORT SocialdButeoPlugin : public Buteo::ClientPlugin
+class Q_DECL_EXPORT SocialdButeoPlugin : public Buteo::ClientPlugin
 {
     Q_OBJECT
 

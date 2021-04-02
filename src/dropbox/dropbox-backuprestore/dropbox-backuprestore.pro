@@ -1,7 +1,5 @@
 TARGET = dropbox-backuprestore-client
 
-DEFINES += "CLASSNAME=DropboxBackupRestorePlugin"
-DEFINES += CLASSNAME_H=\\\"dropboxbackuprestoreplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../dropbox-common.pri)
 include($$PWD/../dropbox-backupoperation.pri)

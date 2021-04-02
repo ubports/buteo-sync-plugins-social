@@ -1,7 +1,5 @@
 TARGET = vk-images-client
 
-DEFINES += "CLASSNAME=VKImagesPlugin"
-DEFINES += CLASSNAME_H=\\\"vkimagesplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../vk-common.pri)
 include($$PWD/vk-images.pri)

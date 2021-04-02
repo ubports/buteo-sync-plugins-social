@@ -1,7 +1,5 @@
 TARGET = google-contacts-client
 
-DEFINES += "CLASSNAME=GoogleContactsPlugin"
-DEFINES += CLASSNAME_H=\\\"googlecontactsplugin.h\\\"
 DEFINES += SOCIALD_USE_QTPIM
 include($$PWD/../../common.pri)
 include($$PWD/../google-common.pri)

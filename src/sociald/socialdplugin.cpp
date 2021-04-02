@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2013-2014 Jolla Ltd.
- ** Contact: Raine Makelainen <raine.makelainen@jollamobile.com>
+ ** Copyright (c) 2013 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -32,17 +31,7 @@
 #include <PluginCbInterface.h>
 #include <LogMacros.h>
 
-extern "C" SocialdPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new SocialdPlugin(pluginName, profile, callbackInterface);
-}
 
-extern "C" void destroyPlugin(SocialdPlugin* plugin)
-{
-    delete plugin;
-}
 
 SocialdPlugin::SocialdPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,

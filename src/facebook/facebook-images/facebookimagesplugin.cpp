@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "facebookimagesyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" FacebookImagesPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new FacebookImagesPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(FacebookImagesPlugin* plugin)
-{
-    delete plugin;
-}
-
 FacebookImagesPlugin::FacebookImagesPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,12 @@ FacebookImagesPlugin::~FacebookImagesPlugin()
 SocialNetworkSyncAdaptor *FacebookImagesPlugin::createSocialNetworkSyncAdaptor()
 {
     return new FacebookImageSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* FacebookImagesPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new FacebookImagesPlugin(pluginName, profile, cbInterface);
 }

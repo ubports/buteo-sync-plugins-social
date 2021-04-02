@@ -1,7 +1,5 @@
 TARGET = facebook-signon-client
 
-DEFINES += "CLASSNAME=FacebookSignonPlugin"
-DEFINES += CLASSNAME_H=\\\"facebooksignonplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../facebook-common.pri)
 include($$PWD/facebook-signon.pri)

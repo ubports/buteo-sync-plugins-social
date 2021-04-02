@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,17 +22,7 @@
 #include "googlecalendarsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" GoogleCalendarsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new GoogleCalendarsPlugin(pluginName, profile, callbackInterface);
-}
 
-extern "C" void destroyPlugin(GoogleCalendarsPlugin* plugin)
-{
-    delete plugin;
-}
 
 GoogleCalendarsPlugin::GoogleCalendarsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,

@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "onedrivesignonsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" OneDriveSignonPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new OneDriveSignonPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(OneDriveSignonPlugin* plugin)
-{
-    delete plugin;
-}
-
 OneDriveSignonPlugin::OneDriveSignonPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,12 @@ OneDriveSignonPlugin::~OneDriveSignonPlugin()
 SocialNetworkSyncAdaptor *OneDriveSignonPlugin::createSocialNetworkSyncAdaptor()
 {
     return new OneDriveSignonSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* OneDriveSignonPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new OneDriveSignonPlugin(pluginName, profile, cbInterface);
 }

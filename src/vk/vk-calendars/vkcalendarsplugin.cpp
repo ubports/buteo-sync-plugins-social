@@ -1,25 +1,12 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ****************************************************************************/
 
 #include "vkcalendarsplugin.h"
 #include "vkcalendarsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
-
-extern "C" VKCalendarsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new VKCalendarsPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(VKCalendarsPlugin* plugin)
-{
-    delete plugin;
-}
 
 VKCalendarsPlugin::VKCalendarsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
@@ -38,3 +25,12 @@ SocialNetworkSyncAdaptor *VKCalendarsPlugin::createSocialNetworkSyncAdaptor()
 {
     return new VKCalendarSyncAdaptor(this);
 }
+
+Buteo::ClientPlugin* VKCalendarsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new VKCalendarsPlugin(pluginName, profile, cbInterface);
+}
+

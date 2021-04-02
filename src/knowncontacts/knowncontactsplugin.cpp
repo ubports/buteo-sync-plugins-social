@@ -1,6 +1,7 @@
 /*
  * Buteo sync plugin that stores locally created contacts
  * Copyright (C) 2020 Open Mobile Platform LLC.
+ ** Copyright (c) 2019 - 2021 Jolla Ltd.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,17 +29,7 @@
 
 const auto KnownContactsSyncFolder = QStringLiteral("system/privileged/Contacts/knowncontacts");
 
-extern "C" KnownContactsPlugin* createPlugin(const QString& pluginName,
-                                             const Buteo::SyncProfile& profile,
-                                             Buteo::PluginCbInterface *cbInterface)
-{
-    return new KnownContactsPlugin(pluginName, profile, cbInterface);
-}
 
-extern "C" void destroyPlugin(KnownContactsPlugin *client)
-{
-    delete client;
-}
 
 KnownContactsPlugin::KnownContactsPlugin(const QString& pluginName,
                                          const Buteo::SyncProfile& profile,

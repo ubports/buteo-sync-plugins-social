@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Jonni Rainisto <jonni.rainisto@jolla.com>
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "dropboximagesyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" DropboxImagesPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new DropboxImagesPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(DropboxImagesPlugin* plugin)
-{
-    delete plugin;
-}
-
 DropboxImagesPlugin::DropboxImagesPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,12 @@ DropboxImagesPlugin::~DropboxImagesPlugin()
 SocialNetworkSyncAdaptor *DropboxImagesPlugin::createSocialNetworkSyncAdaptor()
 {
     return new DropboxImageSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* DropboxImagesPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new DropboxImagesPlugin(pluginName, profile, cbInterface);
 }

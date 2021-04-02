@@ -1,7 +1,5 @@
 TARGET = sociald-client
 
-DEFINES += "CLASSNAME=SocialdPlugin"
-DEFINES += CLASSNAME_H=\\\"socialdplugin.h\\\"
 include($$PWD/../common.pri)
 
 HEADERS += socialdplugin.h

@@ -23,18 +23,6 @@
 #include "vkimagesyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" VKImagesPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new VKImagesPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(VKImagesPlugin* plugin)
-{
-    delete plugin;
-}
-
 VKImagesPlugin::VKImagesPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +39,12 @@ VKImagesPlugin::~VKImagesPlugin()
 SocialNetworkSyncAdaptor *VKImagesPlugin::createSocialNetworkSyncAdaptor()
 {
     return new VKImageSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* VKImagesPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new VKImagesPlugin(pluginName, profile, cbInterface);
 }

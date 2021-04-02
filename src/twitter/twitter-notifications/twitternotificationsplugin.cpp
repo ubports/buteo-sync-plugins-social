@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2014 Jolla Ltd.
- ** Contact: Chris Adams <chris.adams@jolla.com>
+ ** Copyright (c) 2014 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -25,18 +24,6 @@
 
 #include <QTranslator>
 #include <QCoreApplication>
-
-extern "C" TwitterNotificationsPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new TwitterNotificationsPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(TwitterNotificationsPlugin* plugin)
-{
-    delete plugin;
-}
 
 TwitterNotificationsPlugin::TwitterNotificationsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
@@ -64,3 +51,13 @@ SocialNetworkSyncAdaptor *TwitterNotificationsPlugin::createSocialNetworkSyncAda
 {
     return new TwitterNotificationSyncAdaptor(this);
 }
+
+
+Buteo::ClientPlugin* TwitterNotificationsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new TwitterNotificationsPlugin(pluginName, profile, cbInterface);
+}
+

@@ -1,7 +1,6 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 Jolla Ltd.
- ** Contact: Antti Seppälä <antti.seppala@jolla.com>
+ ** Copyright (c) 2015 - 2021 Jolla Ltd.
  **
  ** This program/library is free software; you can redistribute it and/or
  ** modify it under the terms of the GNU Lesser General Public License
@@ -23,18 +22,6 @@
 #include "onedriveimagesyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-extern "C" OneDriveImagesPlugin* createPlugin(const QString& pluginName,
-                                       const Buteo::SyncProfile& profile,
-                                       Buteo::PluginCbInterface *callbackInterface)
-{
-    return new OneDriveImagesPlugin(pluginName, profile, callbackInterface);
-}
-
-extern "C" void destroyPlugin(OneDriveImagesPlugin* plugin)
-{
-    delete plugin;
-}
-
 OneDriveImagesPlugin::OneDriveImagesPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -51,4 +38,12 @@ OneDriveImagesPlugin::~OneDriveImagesPlugin()
 SocialNetworkSyncAdaptor *OneDriveImagesPlugin::createSocialNetworkSyncAdaptor()
 {
     return new OneDriveImageSyncAdaptor(this);
+}
+
+Buteo::ClientPlugin* OneDriveImagesPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new OneDriveImagesPlugin(pluginName, profile, cbInterface);
 }

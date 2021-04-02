@@ -1,7 +1,5 @@
 TARGET = dropbox-backupquery-client
 
-DEFINES += "CLASSNAME=DropboxBackupQueryPlugin"
-DEFINES += CLASSNAME_H=\\\"dropboxbackupqueryplugin.h\\\"
 include($$PWD/../../common.pri)
 include($$PWD/../dropbox-common.pri)
 include($$PWD/../dropbox-backupoperation.pri)
