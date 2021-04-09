@@ -236,11 +236,11 @@ void SocialdButeoPlugin::syncStatusChanged()
             emit success(getProfileName(), QString("%1 update succeeded").arg(getProfileName()));
         } else if (syncStatus != SocialNetworkSyncAdaptor::Busy) {
             updateResults(Buteo::SyncResults(QDateTime::currentDateTime(), Buteo::SyncResults::SYNC_RESULT_FAILED, Buteo::SyncResults::ABORTED));
-            emit error(getProfileName(), QString("%1 update failed").arg(getProfileName()), Buteo::SyncResults::SYNC_RESULT_FAILED);
+            emit error(getProfileName(), QString("%1 update failed").arg(getProfileName()), Buteo::SyncResults::ABORTED);
         }
     } else {
         updateResults(Buteo::SyncResults(QDateTime::currentDateTime(), Buteo::SyncResults::SYNC_RESULT_FAILED, Buteo::SyncResults::ABORTED));
-        emit error(getProfileName(), QString("%1 update failed").arg(getProfileName()), Buteo::SyncResults::SYNC_RESULT_FAILED);
+        emit error(getProfileName(), QString("%1 update failed").arg(getProfileName()), Buteo::SyncResults::ABORTED);
     }
 }
 
