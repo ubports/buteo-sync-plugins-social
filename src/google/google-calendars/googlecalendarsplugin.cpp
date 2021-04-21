@@ -22,8 +22,6 @@
 #include "googlecalendarsyncadaptor.h"
 #include "socialnetworksyncadaptor.h"
 
-
-
 GoogleCalendarsPlugin::GoogleCalendarsPlugin(const QString& pluginName,
                              const Buteo::SyncProfile& profile,
                              Buteo::PluginCbInterface *callbackInterface)
@@ -41,3 +39,13 @@ SocialNetworkSyncAdaptor *GoogleCalendarsPlugin::createSocialNetworkSyncAdaptor(
 {
     return new GoogleCalendarSyncAdaptor(this);
 }
+
+
+Buteo::ClientPlugin* GoogleCalendarPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new GoogleCalendarsPlugin(pluginName, profile, cbInterface);
+}
+
