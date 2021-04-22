@@ -171,3 +171,12 @@ void KnownContactsPlugin::connectivityStateChanged(Sync::ConnectivityType type, 
     FUNCTION_CALL_TRACE;
     // Stub
 }
+
+Buteo::ClientPlugin* KnownContactsPluginLoader::createClientPlugin(
+        const QString& pluginName,
+        const Buteo::SyncProfile& profile,
+        Buteo::PluginCbInterface* cbInterface)
+{
+    return new KnownContactsPlugin(pluginName, profile, cbInterface);
+}
+

@@ -25,6 +25,7 @@
 
 #include <ClientPlugin.h>
 #include <SyncResults.h>
+#include <buteosyncfw5/SyncPluginLoader.h>
 
 class KnownContactsSyncer;
 
@@ -85,17 +86,16 @@ private:
     KnownContactsSyncer *m_syncer;
 };
 
-/*! \brief Creates KnownContactsPlugin client plugin
- *
- * @param pluginName Name of this client plugin
- * @param profile Profile to use
- * @param cbInterface Pointer to the callback interface
- * @return Client plugin on success, otherwise NULL
- */
 
-/*! \brief Destroys KnownContactsPlugin client plugin
- *
- * @param client KnownContactsPlugin client plugin instance to destroy
- */
+class KnownContactsPluginLoader : public Buteo::SyncPluginLoader
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.sailfishos.plugins.sync.KnownContactsPluginLoader")
+    Q_INTERFACES(Buteo::SyncPluginLoader)
 
+public:
+    Buteo::ClientPlugin* createClientPlugin(const QString& pluginName,
+                                            const Buteo::SyncProfile& profile,
+                                            Buteo::PluginCbInterface* cbInterface) override;
+};
 #endif  //  KNOWNCONTACTSPLUGIN_H
