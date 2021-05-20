@@ -7,6 +7,7 @@ CONFIG += link_pkgconfig
 PKGCONFIG += \
     accounts-qt5 \
     buteosyncfw5 \
+    socialcache \
 
 TARGET = syncpluginscommon
 TARGET = $$qtLibraryTarget($$TARGET)
