@@ -18,7 +18,6 @@ BuildRequires:  pkgconfig(libsignon-qt5)
 BuildRequires:  pkgconfig(accounts-qt5) >= 1.13
 BuildRequires:  pkgconfig(socialcache) >= 0.0.48
 BuildRequires:  pkgconfig(libsailfishkeyprovider)
-BuildRequires:  pkgconfig(contactcache-qt5)
 BuildRequires:  pkgconfig(qtcontacts-sqlite-qt5-extensions) >= 0.3.0
 BuildRequires:  pkgconfig(libmkcal-qt5) >= 0.5.9
 BuildRequires:  pkgconfig(KF5CalendarCore) >= 5.79

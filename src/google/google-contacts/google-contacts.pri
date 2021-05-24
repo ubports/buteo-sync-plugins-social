@@ -1,5 +1,5 @@
 CONFIG += link_pkgconfig
-PKGCONFIG += Qt5Contacts qtcontacts-sqlite-qt5-extensions contactcache-qt5
+PKGCONFIG += Qt5Contacts qtcontacts-sqlite-qt5-extensions
 QT += gui
 
 SOURCES += \
