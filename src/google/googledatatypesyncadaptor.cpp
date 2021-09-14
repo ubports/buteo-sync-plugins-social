@@ -62,6 +62,7 @@ void GoogleDataTypeSyncAdaptor::sync(const QString &dataTypeString, int accountI
         return;
     }
 
+#ifdef USE_SAILFISHKEYPROVIDER
     if (clientId().isEmpty()) {
         SOCIALD_LOG_ERROR("client id couldn't be retrieved for Google account" << accountId);
         setStatus(SocialNetworkSyncAdaptor::Error);
@@ -73,6 +74,7 @@ void GoogleDataTypeSyncAdaptor::sync(const QString &dataTypeString, int accountI
         setStatus(SocialNetworkSyncAdaptor::Error);
         return;
     }
+#endif
 
     setStatus(SocialNetworkSyncAdaptor::Busy);
     updateDataForAccount(accountId);
@@ -213,10 +215,16 @@ void GoogleDataTypeSyncAdaptor::signIn(Accounts::Account *account)
 {
     // Fetch consumer key and secret from keyprovider
     int accountId = account->id();
-    if (!checkAccount(account) || clientId().isEmpty() || clientSecret().isEmpty()) {
+    if (!checkAccount(account)) {
         decrementSemaphore(accountId);
         return;
     }
+#ifdef USE_SAILFISHKEYPROVIDER
+    if (clientId().isEmpty() || clientSecret().isEmpty()) {
+        decrementSemaphore(accountId);
+        return;
+    }
+#endif
 
     // grab out a valid identity for the sync service.
     Accounts::Service srv(m_accountManager->service(syncServiceName()));
